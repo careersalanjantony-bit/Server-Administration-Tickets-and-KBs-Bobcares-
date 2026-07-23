@@ -370,7 +370,7 @@ watch -n 2 'CURR=$(du -sm /var/lib/libvirt/images/<VM-ID>/0 | cut -f1); PREV=$(c
 ---
 
 ## References
-
+- https://support.solusvm.com/hc/en-us/articles/40875972240535-SolusVM2-offline-migration-failed-with-the-error-operation-failed-domain-is-no-longer-running
 - Upstream libvirt issue: <https://gitlab.com/libvirt/libvirt/-/issues/865>
 - Red Hat Bugzilla/JIRA reference: RHEL-156800
 - `virsh` migration API: `DomainMigrateBegin3Params`, `DomainMigratePrepare3Params`, `DomainMigratePerform3Params`, `DomainMigrateFinish3Params`, `DomainMigrateConfirm3Params`
