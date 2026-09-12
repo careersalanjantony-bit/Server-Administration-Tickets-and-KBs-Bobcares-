@@ -10,18 +10,18 @@ System Uptime         : up 2 weeks, 2 days, 8 hours, 32 minutes
 Web Server Uptime     : 01:50:03
 
 === 1. Threat Protection ===
-System Firewall        : Good - Active: iptables nftables firewalld Imunify360 | Inactive: cPHulk
-Malware Scanner        : Good - ClamAV installed + weekly Bobcares scan cron active
-Failed Login Detection : Good - Imunify360 active
-Web App Firewall       : Warning - Rules Engine is unknown
-Rootkit Scanner        : Good - Installed: chkrootkit rkhunter
+System Firewall        :  Good - Active: iptables nftables firewalld Imunify360 | Inactive: cPHulk
+Malware Scanner        :  Good - ClamAV installed + weekly Bobcares scan cron active
+Failed Login Detection :  Good - Imunify360 active
+Web App Firewall       :  Warning - Rules Engine is unknown
+Rootkit Scanner        :  Good - Installed: chkrootkit rkhunter
 chkrootkit             : /usr/local/sbin/chkrootkit
 rkhunter               : /usr/bin/rkhunter
 ClamAV                 : Present
 Bobcares scripts       : 2 of 2 present
 Cron job               : Present
 Whitelist file         : Present
-Setup actions          : chkrootkit install FAILED; rkhunter installed; ClamAV installed; unofficial-sigs installed; freshclam run; cron present; whitelist created;
+Setup actions          : chkrootkit install FAILED; rkhunter installed; ClamAV installed; unofficial-sigs installed; freshclam run; cron present; whitelist created; 
 Scan triggered         : No
 
 === 2. Software Updates ===
@@ -31,20 +31,59 @@ Security updates       : 0
 PHP pending            : 0
 httpd/apache pending   : 0
 MySQL/MariaDB pending  : 0
-Other pending          : 0
-Control panel          : Update Available (Tier: release | Installed: 11.136.0.40 | Latest: 11.138.0.6 | Source: httpupdate:cpanelsync/TIERS)
+Other pending          : 0 
+Control panel          :  Update Available (Tier: release | Installed: 11.136.0.40 | Latest: 11.138.0.6 | Source: httpupdate:cpanelsync/TIERS)
 Running kernel         : 4.18.0-553.150.1.lve.el8.x86_64
 Kernel environment     : standard
 Kernel update in repo  : No
+Kernel analysis        : 
 KernelCare             : Active - live patches applied
 KernelCare effective   : 4.18.0-553.150.1.lve.el8
 Reboot required        : Yes (Core components updated since boot)
 Services to restart    : 1 - cpanel.service,cpdavd.service dbus.service,dnsadmin.service jetmongod.service,queueprocd.service systemd-logind.service,tailwatchd.service vm-agent.service
 
 === 3. Server Health ===
-Server Uptime    : Good (up 2 weeks, 2 days, 8 hours, 32 minutes)
-HTTP Uptime      : Running (01:50:03)
-CPU Usage        : Optimal (Load: 4.48)
-RAM Usage        : Good (18%)
-Disk Usage       : Good (67%)
-Email Queue      : High (Queued: 138)
+Server Uptime    :  Good (up 2 weeks, 2 days, 8 hours, 32 minutes)
+HTTP Uptime      :  Running (01:50:03)
+CPU Usage        :  Optimal (Load: 4.48)
+RAM Usage        :  Good (18%)
+Disk Usage       :  Good (67%)
+Email Queue      :  High (Queued: 138)
+IP Reputation    :  Good - Not listed on major DNSBLs
+
+=== 4. Backup ===
+Local Backup        :  Disabled - cPanel backups are not enabled
+Remote Backup       :  Not configured - No enabled remote/additional backup destinations
+Daily Backup        :  Disabled - Master backup switch is off
+Weekly Backup       :  Disabled - Master backup switch is off
+Monthly Backup      :  Disabled - Master backup switch is off
+Recent Last Backup  :  Unknown - No backup found on disk
+Size Of Last Backup :  Unknown - N/A
+
+=== 5. Software Life Time ===
+Operating System : cloudlinux 8.10 - Supported
+Control Panel    : cpanel 11.136.0.40 ( Update Available)
+PHP EOL          :  EOL versions present - No longer supported by vendor: alt-php74 alt-php80 alt-php81 ea-php81 (default: ea-php81)
+CMS              : Manual check required
+
+=== 6. Proactive Defence ===
+/tmp noexec      : yes ( Good)
+Reboot Procedure :  Manual - Virtual Machine (kvm) - confirm hypervisor/provider console reboot access is documented
+IP RDNS          :  Good - PTR record: srv01.example-dc.tld
+Malware Scan     :  Clean - No malware found (last scan: 2026-09-11 23:05)
+Rootkit Check    :  Unknown - No rootkit scan report found
+Outdated CMS     :  Unknown - No CMS version report available
+SSH Root Login   :  Good (Disabled / Key Only) (no)
+SSH Password Auth:  Password auth enabled (yes)
+SSH Port(s)      : 22
+PHP Functions    :  Not set - Dangerous PHP functions (exec, shell_exec, system, passthru...) are not disabled
+Root Password    :  Warning (~114 days old)
+
+=== Additional cPanel Checks ===
+whmapi1 available : yes
+jq binary         : /usr/bin/jq
+PHP versions      : alt-php74, alt-php80, alt-php81, alt-php82, alt-php83, alt-php85, ea-php81, ea-php82
+PHP default       : ea-php81
+Accounts total    : 617 (suspended: 3)
+Services down     : apache_php_fpm, mailman
+SSL expiring <30d : 0 - No certs expiring within 30 days

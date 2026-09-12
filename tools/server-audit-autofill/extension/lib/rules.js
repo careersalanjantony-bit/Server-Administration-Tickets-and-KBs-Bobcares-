@@ -38,6 +38,7 @@ const AUDIT_RULES = {
       "not found", "not set", "not available", "no backup", "end of life",
       "end-of-life", "out of date", "update available", "updates available",
       "security update", "security updates", "needs attention",
+      "eol versions present",
       "warning", "warn", "high", "critical", "error", "fail", "failed",
       "disabled", "inactive", "missing", "absent", "unknown", "outdated",
       "eol", "unsupported", "expired", "insecure", "weak", "exceeded",
@@ -342,7 +343,7 @@ const AUDIT_RULES = {
           category: "Control Panel",
           titleAliases: ["Control Panel", "Control panel"],
           occurrence: 1,
-          sources: ["Control Panel EOL", "Control panel lifetime", "Control Panel Life Time"],
+          sources: ["Control Panel", "Control Panel EOL", "Control panel lifetime"],
           recommendation: {
             issue: "The installed control panel version is at or approaching end of life.",
             recommendation: "Plan an upgrade to a supported control panel release before the vendor's end-of-life date.",
@@ -353,7 +354,7 @@ const AUDIT_RULES = {
           category: "Operating System",
           titleAliases: ["Operating System", "OS"],
           occurrence: 1,
-          sources: ["OS EOL", "Operating System Life Time", "OS / Version"],
+          sources: ["Operating System", "OS EOL", "Operating System Life Time", "OS / Version"],
           recommendation: {
             issue: "The operating system release is at or approaching end of life, so it will stop receiving security patches.",
             recommendation: "Plan a migration or in-place upgrade to a supported OS release well before the end-of-life date.",
@@ -364,7 +365,7 @@ const AUDIT_RULES = {
           category: "CMS",
           titleAliases: ["CMS"],
           occurrence: 1,
-          sources: ["CMS EOL", "CMS Life Time", "CMS Version"],
+          sources: ["CMS", "CMS EOL", "CMS Life Time", "Outdated CMS"],
           recommendation: {
             issue: "One or more hosted CMS installations run a branch that is no longer receiving security fixes.",
             recommendation: "Upgrade the affected sites to a supported CMS branch, or isolate them if the site owner declines.",
@@ -375,7 +376,8 @@ const AUDIT_RULES = {
           category: "Software Stack",
           titleAliases: ["Software Stack", "Stack"],
           occurrence: 0,
-          sources: ["Software Stack", "Stack EOL", "Software stack lifetime", "PHP Version"],
+          sources: ["PHP EOL", "Software Stack", "Stack EOL", "Software stack lifetime"],
+          extras: ["PHP versions", "PHP default"],
           recommendation: {
             issue: "Part of the software stack (PHP branch, database server or web server) is past its supported lifetime.",
             recommendation: "Move the affected components onto supported versions, coordinating PHP branch moves with the site owners.",
@@ -391,7 +393,7 @@ const AUDIT_RULES = {
         {
           category: "/tmp Security",
           titleAliases: ["/tmp Security", "tmp Security", "Tmp Security"],
-          sources: ["/tmp Security", "tmp Security", "/tmp partition", "tmp partition"],
+          sources: ["/tmp noexec", "/tmp Security", "tmp Security", "/tmp partition"],
           recommendation: {
             issue: "/tmp is not mounted with the hardening options that stop code execution from world-writable temp space.",
             recommendation: "Mount /tmp (and /var/tmp, /dev/shm) with noexec, nosuid and nodev, after confirming no legitimate application depends on executing from /tmp.",
@@ -401,7 +403,7 @@ const AUDIT_RULES = {
         {
           category: "Reboot Procedure",
           titleAliases: ["Reboot Procedure", "Reboot"],
-          sources: [{ label: "Reboot required", interpret: "invert" }, "Reboot Procedure"],
+          sources: ["Reboot Procedure", { label: "Reboot required", interpret: "invert" }],
           extras: ["Services to restart", "KernelCare", "Running kernel"],
           recommendation: {
             issue: "Core components have been updated since the last boot, so the running kernel/libraries differ from what is installed on disk.",
@@ -412,8 +414,7 @@ const AUDIT_RULES = {
         {
           category: "IP RDNS",
           titleAliases: ["IP RDNS", "RDNS", "rDNS", "Reverse DNS"],
-          sources: ["rDNS", "IP RDNS", "Reverse DNS"],
-          interpret: "presence",
+          sources: ["IP RDNS", "Reverse DNS", { label: "rDNS", interpret: "presence" }],
           extras: ["Hostname", "Main IP"],
           recommendation: {
             issue: "Reverse DNS for the main IP is missing or does not match the server hostname, which hurts outbound mail deliverability.",
@@ -424,7 +425,7 @@ const AUDIT_RULES = {
         {
           category: "Malware Scan",
           titleAliases: ["Malware Scan", "Malware Scan Run"],
-          sources: ["Scan triggered", "Malware Scan", "Last Malware Scan"],
+          sources: ["Malware Scan", "Last Malware Scan", "Scan triggered"],
           recommendation: {
             issue: "No recent malware scan has been run on the server.",
             recommendation: "Run a full malware scan, review the findings with the customer, and schedule recurring scans.",
@@ -450,6 +451,7 @@ const AUDIT_RULES = {
             "SSH Root Login",
             { label: "SSH Password Auth", interpret: "invert" }
           ],
+          extras: ["SSH Password Auth", "SSH Port(s)"],
           recommendation: {
             issue: "SSH allows direct root login and/or password authentication, widening the brute-force surface.",
             recommendation: "Disable direct root login and password authentication in sshd_config, moving to key-based access for a sudo-capable user (coordinate with the customer first).",

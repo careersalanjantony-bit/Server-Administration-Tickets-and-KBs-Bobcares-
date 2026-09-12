@@ -152,14 +152,21 @@ a new audit-script version.
 
 ### Coverage note
 
-The mapping was built against a report covering **System Information, Threat
-Protection, Software Updates and Server Health** (see `samples/`), which
-resolves 21 of the 38 items. The rules for **Backup**, **Software Life Time**
-and **Proactive Defence** are written from the portal's own checklist names and
-plausible label spellings, because no sample output for those sections was
-available. If they do not match your script's labels, the items show up as
-"left for manual entry" rather than filling in something wrong — run
-`--unmapped` against a full report and add the real labels to `sources`.
+The mapping is built against a full report covering all six sections plus
+Additional cPanel Checks (see `samples/report-detailed.log`), which resolves
+**35 of the 38** checklist items.
+
+The three it leaves for you are cases where the audit script itself reports
+that it could not determine the answer, so there is nothing to translate:
+
+| Item | Report line |
+|---|---|
+| Software Updates / CMS | no CMS update line is emitted at all |
+| Software Life Time / CMS | `CMS : Manual check required` |
+| Proactive Defence / Reboot Procedure | `Reboot Procedure : Manual - confirm hypervisor console reboot access is documented` |
+
+Turning "the script does not know" into a status would be inventing a finding,
+so those stay blank and are listed for you in the Preview.
 
 ---
 
@@ -185,7 +192,7 @@ available. If they do not match your script's labels, the items show up as
 ./run-tests.sh
 ```
 
-* `tests/parser.test.js` — 26 checks over verdict reading, section-scoped label
+* `tests/parser.test.js` — 35 checks over verdict reading, section-scoped label
   lookup, the interpreters, and the "report it, don't guess it" behaviour.
 * `tests/content.e2e.test.js` — 25 checks driving the real content script in
   Chromium against a mock of the portal page (`tests/fixtures/audit-page.html`)

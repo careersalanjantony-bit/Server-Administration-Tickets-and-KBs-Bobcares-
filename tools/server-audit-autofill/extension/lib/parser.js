@@ -72,6 +72,15 @@
   // en, em), colon, open paren, comma, period.
   const SEPARATOR_RE = new RegExp("[\\s\\-\\u2013\\u2014:(,.]");
 
+  // Used to spot a "detail" that carries no information of its own, e.g.
+  // "/tmp noexec : yes ( Good)" leaves nothing but the word "Good".
+  const HOLLOW_DETAILS = (function () {
+    const set = Object.create(null);
+    VERDICT_TABLE.forEach(function (row) { set[row.word] = true; });
+    (RULES.emptyValues || []).forEach(function (e) { set[normalise(e)] = true; });
+    return set;
+  })();
+
   /**
    * Pull a verdict out of a value string.
    * Looks at the start of the value first ("Good - Active: ..."), then at a
@@ -94,13 +103,17 @@
         if (SEPARATOR_RE.test(next)) {
           let detail = v.slice(row.word.length).trim();
           detail = detail.replace(new RegExp("^[-\\u2013\\u2014:,]+\\s*"), "").trim();
-          if (/^\(.*\)$/.test(detail)) detail = detail.slice(1, -1).trim();
+          // Unwrap "(Load: 4.48)" but not "(Disabled / Key Only) (no)", which is
+          // two groups rather than one wrapper.
+          const wrapped = detail.match(/^\(([^()]*)\)$/);
+          if (wrapped) detail = wrapped[1].trim();
           return { status: row.status, word: row.word, detail: detail };
         }
       }
     }
 
-    // Verdict inside a trailing parenthesised group.
+    // Verdict inside a trailing parenthesised group:
+    // "cpanel 11.136.0.40 ( Update Available)".
     const paren = v.match(/\(([^()]*)\)\s*$/);
     if (paren) {
       const inner = normalise(paren[1]);
@@ -111,6 +124,24 @@
             status: row.status,
             word: row.word,
             detail: v.slice(0, paren.index).trim()
+          };
+        }
+      }
+    }
+
+    // Verdict as the final dash-separated clause: "cloudlinux 8.10 - Supported".
+    // Exact match only, so a trailing sentence ("... - confirm console access is
+    // documented") stays unresolved rather than matching a word inside it.
+    const clauses = v.split(new RegExp("\\s+[-\\u2013\\u2014]\\s+"));
+    if (clauses.length > 1) {
+      const last = normalise(clauses[clauses.length - 1]);
+      for (let k = 0; k < VERDICT_TABLE.length; k++) {
+        const row = VERDICT_TABLE[k];
+        if (last === row.word) {
+          return {
+            status: row.status,
+            word: row.word,
+            detail: clauses.slice(0, -1).join(" - ").trim()
           };
         }
       }
@@ -330,7 +361,14 @@
         const interpreted = applyInterpret(mode, hit.entry);
         base.source = hit.entry.label;
         base.raw = hit.entry.value;
-        base.details = buildDetails(interpreted.detail, rule, report);
+
+        // If stripping the verdict left nothing meaningful, put the whole
+        // report line in the notes instead of a lone "Good".
+        let primary = interpreted.detail;
+        if (!primary || HOLLOW_DETAILS[normalise(primary)]) {
+          primary = hit.entry.label + ": " + hit.entry.value;
+        }
+        base.details = buildDetails(primary, rule, report);
 
         if (interpreted.status == null) {
           items.push(base);

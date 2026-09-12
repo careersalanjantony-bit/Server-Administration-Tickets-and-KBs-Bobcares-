@@ -150,8 +150,16 @@ check("section-scoped lookup picks the right duplicate label", function () {
 });
 
 check("inverted source flips the verdict", function () {
-  // "Reboot required: Yes" is a problem, not a pass.
-  const reboot = item("Proactive Defence", "Reboot Procedure");
+  // Older reports have no "Reboot Procedure" line, only "Reboot required: Yes"
+  // in Software Updates - which is a problem, not a pass. That fallback source
+  // is declared with interpret: "invert".
+  const older = parser.buildAuditData(
+    "=== 2. Software Updates ===\nReboot required : Yes (Core components updated since boot)\n"
+  );
+  const reboot = older.items.filter(function (i) {
+    return i.section === "Proactive Defence" && i.category === "Reboot Procedure";
+  })[0];
+  eq(reboot.source, "Reboot required", "source label");
   eq(reboot.status, "inactive", "status");
   truthy(reboot.recommendation, "recommendation present");
 });
@@ -173,22 +181,81 @@ check("extras are appended to the details", function () {
 });
 
 check("missing sections are reported, never guessed", function () {
-  // The sample has no Backup section, so those items must stay blank.
-  const local = item("Backup", "Local");
+  const partial = parser.buildAuditData(
+    "=== 1. Threat Protection ===\nSystem Firewall : Good - Active: firewalld\n"
+  );
+  const local = partial.items.filter(function (i) {
+    return i.section === "Backup" && i.category === "Local";
+  })[0];
   eq(local.status, null, "status");
   eq(local.unresolved, true, "unresolved flag");
   truthy(
-    out.unresolved.some(function (u) { return u.category === "Local"; }),
+    partial.unresolved.some(function (u) { return u.category === "Local"; }),
     "listed in unresolved"
   );
+});
+
+check("a check the script could not determine stays manual", function () {
+  // "CMS: Manual check required" and "Reboot Procedure: Manual - ..." are the
+  // script saying it does not know. Never turn that into a finding.
+  eq(item("Software Life Time", "CMS").status, null, "CMS status");
+  eq(item("Proactive Defence", "Reboot Procedure").status, null, "reboot status");
+});
+
+check("backup section maps from the real labels", function () {
+  eq(item("Backup", "Local").status, "inactive", "Local");
+  eq(item("Backup", "Remote").status, "inactive", "Remote");
+  eq(item("Backup", "Size Of Last Backup").status, "inactive", "Size Of Last Backup");
+  truthy(item("Backup", "Local").recommendation, "recommendation attached");
+});
+
+check("verdict as a trailing dash clause", function () {
+  // "Operating System : cloudlinux 8.10 - Supported"
+  const os = item("Software Life Time", "Operating System");
+  eq(os.status, "active", "status");
+  eq(os.details, "cloudlinux 8.10", "details");
+});
+
+check("verdict in a trailing paren on a version string", function () {
+  // "Control Panel : cpanel 11.136.0.40 ( Update Available)"
+  eq(item("Software Life Time", "Control Panel").status, "inactive");
+});
+
+check("two paren groups are not unwrapped as one", function () {
+  // "SSH Root Login : Good (Disabled / Key Only) (no)" must not become
+  // "Disabled / Key Only) (no".
+  const v = parser.readVerdict("Good (Disabled / Key Only) (no)");
+  eq(v.status, "active", "status");
+  eq(v.detail, "(Disabled / Key Only) (no)", "detail");
+});
+
+check("a detail that is only a verdict word falls back to the raw line", function () {
+  // "/tmp noexec : yes ( Good)" would otherwise leave just "Good".
+  eq(item("Proactive Defence", "/tmp Security").details, "/tmp noexec: yes ( Good)");
+});
+
+check("EOL php versions are flagged with the useful half of the line", function () {
+  const stack = item("Software Life Time", "Software Stack");
+  eq(stack.status, "inactive", "status");
+  truthy(stack.details.indexOf("No longer supported") === 0, "details lead with the finding");
+});
+
+check("password auth is surfaced in the SSH notes", function () {
+  const ssh = item("Proactive Defence", "SSH Root Access Security");
+  truthy(ssh.details.indexOf("Password auth enabled") !== -1, "password auth in notes");
 });
 
 check("unmapped report lines are surfaced", function () {
   truthy(out.unmapped.length > 0, "unmapped list populated");
   truthy(
-    out.unmapped.some(function (u) { return u.label === "Kernel environment"; }),
-    "Kernel environment reported as unmapped"
+    out.unmapped.some(function (u) { return u.label === "Services down"; }),
+    "Services down reported as unmapped"
   );
+});
+
+check("the full report resolves all but the genuinely-manual items", function () {
+  eq(out.resolved, 35, "resolved count");
+  eq(out.unresolved.length, 3, "manual count");
 });
 
 check("system facts are extracted", function () {
