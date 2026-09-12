@@ -1,0 +1,50 @@
+=== System Information ===
+Hostname              : whm1.example-host.tld
+Main IP               : 203.0.113.10
+rDNS                  : srv01.example-dc.tld
+OS / Version          : cloudlinux 8.10 (Supported)
+Control Panel         : cpanel 11.136.0.40
+System Type           : Virtual Machine (kvm)
+Kernel                : 4.18.0-553.150.1.lve.el8.x86_64
+System Uptime         : up 2 weeks, 2 days, 8 hours, 32 minutes
+Web Server Uptime     : 01:50:03
+
+=== 1. Threat Protection ===
+System Firewall        : Good - Active: iptables nftables firewalld Imunify360 | Inactive: cPHulk
+Malware Scanner        : Good - ClamAV installed + weekly Bobcares scan cron active
+Failed Login Detection : Good - Imunify360 active
+Web App Firewall       : Warning - Rules Engine is unknown
+Rootkit Scanner        : Good - Installed: chkrootkit rkhunter
+chkrootkit             : /usr/local/sbin/chkrootkit
+rkhunter               : /usr/bin/rkhunter
+ClamAV                 : Present
+Bobcares scripts       : 2 of 2 present
+Cron job               : Present
+Whitelist file         : Present
+Setup actions          : chkrootkit install FAILED; rkhunter installed; ClamAV installed; unofficial-sigs installed; freshclam run; cron present; whitelist created;
+Scan triggered         : No
+
+=== 2. Software Updates ===
+Package Manager        : dnf
+OS packages pending    : 0
+Security updates       : 0
+PHP pending            : 0
+httpd/apache pending   : 0
+MySQL/MariaDB pending  : 0
+Other pending          : 0
+Control panel          : Update Available (Tier: release | Installed: 11.136.0.40 | Latest: 11.138.0.6 | Source: httpupdate:cpanelsync/TIERS)
+Running kernel         : 4.18.0-553.150.1.lve.el8.x86_64
+Kernel environment     : standard
+Kernel update in repo  : No
+KernelCare             : Active - live patches applied
+KernelCare effective   : 4.18.0-553.150.1.lve.el8
+Reboot required        : Yes (Core components updated since boot)
+Services to restart    : 1 - cpanel.service,cpdavd.service dbus.service,dnsadmin.service jetmongod.service,queueprocd.service systemd-logind.service,tailwatchd.service vm-agent.service
+
+=== 3. Server Health ===
+Server Uptime    : Good (up 2 weeks, 2 days, 8 hours, 32 minutes)
+HTTP Uptime      : Running (01:50:03)
+CPU Usage        : Optimal (Load: 4.48)
+RAM Usage        : Good (18%)
+Disk Usage       : Good (67%)
+Email Queue      : High (Queued: 138)
