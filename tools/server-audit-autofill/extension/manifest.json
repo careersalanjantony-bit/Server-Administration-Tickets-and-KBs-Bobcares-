@@ -1,0 +1,32 @@
+{
+  "manifest_version": 2,
+  "name": "Bob_Portal Server Audit Autofill",
+  "version": "1.0.0",
+  "description": "Fills the Bob_Portal server-audit checklist from cpanel-audit.sh output. Never submits - you review and submit every item yourself.",
+  "permissions": [
+    "storage",
+    "tabs",
+    "https://portal.bobcares.com/bob_Portal/server-audit/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "https://portal.bobcares.com/bob_Portal/server-audit/*/edit/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "browser_action": {
+    "default_popup": "popup.html",
+    "default_title": "Bob_Portal Audit Autofill"
+  },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "server-audit-autofill@bobcares.local",
+      "strict_min_version": "78.0"
+    }
+  }
+}

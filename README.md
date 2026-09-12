@@ -7,3 +7,7 @@ Each article documents: the symptoms observed, the diagnostic path taken, the co
 ## Articles
 
 - [SolusVM 2 / KVM: Live & Offline Migration Failures After a Hardware/Node Refresh](kb/solusvm-kvm-live-migration-troubleshooting.md) — CPU generation mismatch (`host-passthrough`) blocking live migration, plus an independent AlmaLinux/RHEL 9.8 libvirt regression blocking offline migration. Covers diagnosis, the CPU-baseline fix, a stuck-migration-lock recovery procedure, and a full verification checklist.
+
+## Tools
+
+- [Server Audit Autofill](tools/server-audit-autofill/) — turns `cpanel-audit.sh` output into the Bob_Portal server-audit checklist and fills each modal for you, surviving the full page reload the portal does on every submit. Parser + Firefox extension + CLI. It never clicks Submit — every item is still reviewed and submitted by hand.
