@@ -19,7 +19,9 @@ from .formimport import (
     apply_suggestions, read_notes, read_submissions, to_month_input,
 )
 from .scheduler import build_plan
-from .s4client import S4Client, load_form_config, save_form_config, suggest_mapping
+from .s4client import (
+    S4Client, load_form_config, match_options, save_form_config, suggest_mapping,
+)
 from .validate import summarise, validate
 
 DEFAULT_OUT = Path("out")
@@ -270,13 +272,36 @@ def cmd_validate(args: argparse.Namespace) -> int:
 
 
 def cmd_inspect(args: argparse.Namespace) -> int:
+    if not args.url and not args.from_json:
+        print("give either --url (fetch the page) or --from-json (a browser dump); "
+              "see docs/collect-s4-form.js", file=sys.stderr)
+        return 1
     form_config = load_form_config(Path(args.form_config) if args.form_config else None)
     client = S4Client(form_config, dry_run=True)
-    try:
-        forms = client.inspect(args.url)
-    except Exception as exc:  # noqa: BLE001 - surface any network/TLS problem plainly
-        print(f"could not fetch {args.url}: {type(exc).__name__}: {exc}", file=sys.stderr)
-        return 1
+    if args.from_json:
+        # For when S4 is only reachable from inside the network: the page is
+        # dumped in the browser and the field names read from that instead.
+        try:
+            forms = json.loads(Path(args.from_json).read_text())
+        except (OSError, json.JSONDecodeError) as exc:
+            print(f"could not read {args.from_json}: {exc}", file=sys.stderr)
+            return 1
+        if not isinstance(forms, list):
+            print(f"{args.from_json}: expected a list of forms, got {type(forms).__name__}",
+                  file=sys.stderr)
+            return 1
+        for form in forms:
+            form.setdefault("inputs", [])
+            form.setdefault("selects", [])
+            form.setdefault("name", "")
+            form.setdefault("method", "POST")
+            form.setdefault("action", "")
+    else:
+        try:
+            forms = client.inspect(args.url)
+        except Exception as exc:  # noqa: BLE001 - surface any network/TLS problem plainly
+            print(f"could not fetch {args.url}: {type(exc).__name__}: {exc}", file=sys.stderr)
+            return 1
     for form in forms:
         print(f"\nform name={form['name']!r} method={form['method']} action={form['action']!r}")
         for item in form["inputs"]:
@@ -286,16 +311,37 @@ def cmd_inspect(args: argparse.Namespace) -> int:
                   f"{len(select['options'])} options")
             for option in select["options"][:40]:
                 print(f"           {option['value']:>8}  {option['text']}")
+    config, roster = _load(args)
     suggestion = suggest_mapping(forms, form_config.get("form_name", "shift"))
-    print("\nsuggested field mapping:")
-    print(json.dumps(suggestion["fields"], indent=2))
+    matched = match_options(forms, config, roster)
+
+    fields = {**suggestion["fields"], **matched["fields"]}
+    print("\nfield mapping:")
+    print(json.dumps(fields, indent=2))
+    print(f"\nmatched {len(matched['shift_time_values'])} of "
+          f"{len(config.slots)} shift times, "
+          f"{len(matched['category_values'])} categories, "
+          f"{len(matched['staff_values'])} staff")
+    for slot in config.slots:
+        if slot.id not in matched["shift_time_values"]:
+            print(f"  unmatched slot: {slot.id} ({slot.label})")
+    for name, options in matched["unmatched"].items():
+        if options:
+            print(f"  dropdown {name!r} had options nothing matched: {', '.join(options)}")
+
     if args.save:
-        form_config.setdefault("fields", {}).update(suggestion["fields"])
+        form_config.setdefault("fields", {}).update(fields)
+        for key in ("shift_time_values", "category_values", "staff_values"):
+            form_config.setdefault(key, {}).update(matched[key])
         form_config["discovered_select_options"] = suggestion.get("select_options", {})
         path = save_form_config(form_config, Path(args.form_config) if args.form_config else None)
         print(f"\nwrote the mapping into {path}")
-        print("Now fill in shift_time_values / category_values / staff_values from the "
-              "discovered_select_options block, then re-run with --execute.")
+        client = S4Client(form_config, dry_run=True)
+        missing = client.missing_mapping()
+        if missing:
+            print(f"still to fill in by hand: {', '.join(missing)}")
+        else:
+            print("mapping is complete — try: s4autofill push --month <YYYY-MM> --verbose")
     return 0
 
 
@@ -433,7 +479,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.set_defaults(func=cmd_validate)
 
     p = sub.add_parser("inspect", help="read S4's real form field names off a page")
-    p.add_argument("--url", required=True)
+    p.add_argument("--url", help="fetch the page directly (needs network access to S4)")
+    p.add_argument("--from-json",
+                   help="read a dump made in the browser instead — see docs/collect-s4-form.js")
     p.add_argument("--form-config")
     p.add_argument("--save", action="store_true", help="write what it finds into s4_form.json")
     p.set_defaults(func=cmd_inspect)

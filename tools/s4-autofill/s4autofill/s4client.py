@@ -14,6 +14,7 @@ from __future__ import annotations
 import http.cookiejar
 import json
 import os
+import re
 import ssl
 import time
 import urllib.error
@@ -223,6 +224,92 @@ def save_form_config(config: dict[str, Any], path: Path | None = None) -> Path:
     return target
 
 
+TIME = re.compile(r"(\d{1,2}):(\d{2})\s*([ap]m)", re.I)
+
+
+def _time_key(text: str) -> str:
+    """Canonical key for a shift label, so '7:00am-3:00pm' and
+    '07:00am-03:00pm' are recognised as the same slot."""
+    parts = [f"{int(h)}:{m}{ap.lower()}" for h, m, ap in TIME.findall(text or "")]
+    return "-".join(parts)
+
+
+def _clean(text: str) -> str:
+    return re.sub(r"[^a-z0-9]", "", (text or "").lower())
+
+
+def match_options(forms: list[dict[str, Any]], config: Any, roster: Any = None) -> dict[str, Any]:
+    """Work out which dropdown option means which slot, category and tech.
+
+    The slot labels in shifts.json were transcribed from S4's own column
+    headers, so they match its dropdown text directly — which means this
+    mapping does not have to be typed out by hand.
+    """
+    slots_by_time = {_time_key(s.label): s.id for s in config.slots if _time_key(s.label)}
+    slots_by_name = {_clean(s.label): s.id for s in config.slots}
+    categories = {_clean(name): code for code, name in config.categories.items()}
+    techs: dict[str, str] = {}
+    if roster is not None:
+        for tech in roster.techs:
+            for alias in (tech.id, tech.display_name, tech.email.split("@")[0]):
+                techs[_clean(alias)] = tech.id
+
+    shift_time_values: dict[str, str] = {}
+    category_values: dict[str, str] = {}
+    staff_values: dict[str, str] = {}
+    unmatched: dict[str, list[str]] = {}
+    fields: dict[str, str] = {}
+
+    for form in forms:
+        for select in form.get("selects", []):
+            options = [o for o in select.get("options", []) if (o.get("text") or "").strip()]
+            if not options:
+                continue
+            slots, cats, staff, missed = {}, {}, {}, []
+            for option in options:
+                text, value = option["text"].strip(), option.get("value", "")
+                slot_id = slots_by_time.get(_time_key(text)) or slots_by_name.get(_clean(text))
+                code = categories.get(_clean(text))
+                if not code:
+                    # S4 writes categories as 'Working Day(W)'.
+                    inner = re.search(r"\(([A-Z]{1,3})\)", text)
+                    if inner and inner.group(1) in config.categories:
+                        code = inner.group(1)
+                tech_id = techs.get(_clean(text))
+                if slot_id:
+                    slots[slot_id] = value
+                elif code:
+                    cats[code] = value
+                elif tech_id:
+                    staff[tech_id] = value
+                else:
+                    missed.append(text)
+
+            best = max(len(slots), len(cats), len(staff))
+            if best == 0:
+                unmatched[select["name"]] = missed[:12]
+                continue
+            if len(slots) == best:
+                shift_time_values.update(slots)
+                fields["shift_time"] = select["name"]
+            elif len(cats) == best:
+                category_values.update(cats)
+                fields["category"] = select["name"]
+            else:
+                staff_values.update(staff)
+                fields["staff"] = select["name"]
+            if missed:
+                unmatched[select["name"]] = missed[:12]
+
+    return {
+        "fields": fields,
+        "shift_time_values": shift_time_values,
+        "category_values": category_values,
+        "staff_values": staff_values,
+        "unmatched": unmatched,
+    }
+
+
 def suggest_mapping(forms: list[dict[str, Any]], form_name: str = "shift") -> dict[str, Any]:
     """Best-effort guess at the field mapping from a scraped page.
 
@@ -263,4 +350,4 @@ def suggest_mapping(forms: list[dict[str, Any]], form_name: str = "shift") -> di
 
 
 __all__ = ["S4Client", "FormScraper", "PushResult", "load_form_config", "save_form_config",
-           "suggest_mapping"]
+           "suggest_mapping", "match_options"]

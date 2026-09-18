@@ -27,9 +27,8 @@ python3 -m s4autofill plan --month 2026-11 \
 
 # 3. Open out/2026-11/preview.html and read it
 
-# 4. Teach it S4's form once (from a machine that can reach S4)
-python3 -m s4autofill inspect --save \
-    --url 'https://s4.inhouse.net/index.php?action=view_shift&sdate=2026-11-01&edate=2026-11-30&t=6&edit_co_shift=N'
+# 4. Teach it S4's form once (see "Connecting to S4" — one-time)
+python3 -m s4autofill inspect --save --from-json s4-form-dump.json
 
 # 5. Dry run, then for real
 export S4_USER=... S4_PASSWORD=...
@@ -232,15 +231,33 @@ S4's form field names are **not** hard-coded, because guessing them would write
 the wrong thing into a live roster. `config/s4_form.json` ships with
 placeholders and `push --execute` refuses to run while any remain.
 
+S4 is internal-only, so there are two ways to do this. Either works; both are
+one-time.
+
+**From the browser (no network access needed).** Log in to S4, open the shift
+edit page, open the console (F12), and paste in
+[`docs/collect-s4-form.js`](docs/collect-s4-form.js). It copies a JSON block to
+your clipboard. Save it and run:
+
+```bash
+python3 -m s4autofill inspect --save --from-json s4-form-dump.json
+```
+
+The snippet reads field names and dropdown options only. It sends nothing
+anywhere and deliberately skips the contents of any password field.
+
+**From a machine that can reach S4**, skip the browser step:
+
 ```bash
 python3 -m s4autofill inspect --save --url '<the shift edit page>'
 ```
 
-That prints every input, select and option on the page, fills in the field
-names it is confident about, and dumps the dropdown options under
-`discovered_select_options`. Copy those into `shift_time_values` (slot id →
-S4's option value), `category_values` (W/CL/PH/… → S4's value) and
-`staff_values` (tech id → S4's staff id). One-time job.
+Either way it works out which dropdown option means which slot, category and
+tech by itself — the slot labels in `shifts.json` were transcribed from S4's
+own column headers, so they match its dropdown text directly, including
+S4's inconsistent leading zeros (`7:00am-3:00pm` vs `07:02am-03:02pm`).
+Anything it cannot match is listed by name rather than guessed, and it tells
+you whether the mapping is complete.
 
 Credentials come from `S4_USER` / `S4_PASSWORD` in the environment and are
 never read from a config file.
