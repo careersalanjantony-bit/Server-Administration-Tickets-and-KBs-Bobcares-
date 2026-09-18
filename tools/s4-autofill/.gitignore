@@ -1,0 +1,5 @@
+out/
+intake/
+config/months/
+__pycache__/
+.pytest_cache/

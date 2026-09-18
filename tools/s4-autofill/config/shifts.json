@@ -1,0 +1,271 @@
+{
+  "_comment": "Slot catalogue transcribed from the S4 monthly view (team=Installation, t=6). 'observed_avg' is the Average Count row from the S4 month summary for Sep-2026 and is what min/target/max were derived from. Edit min/target/max to change coverage; nothing else in the code hard-codes them.",
+  "team": {
+    "name": "Installation",
+    "s4_team_id": 6,
+    "timezone": "Asia/Kolkata",
+    "week_starts": "Monday"
+  },
+  "slots": [
+    {
+      "id": "m0658",
+      "label": "06:58am-02:58pm",
+      "start": "06:58",
+      "duration_min": 480,
+      "band": "morning",
+      "observed_avg": 2.7,
+      "min": 2,
+      "target": 3,
+      "max": 4,
+      "division_min": {
+        "SA": 1,
+        "SM": 1
+      },
+      "dedicated": []
+    },
+    {
+      "id": "m0700",
+      "label": "7:00am-3:00pm",
+      "start": "07:00",
+      "duration_min": 480,
+      "band": "morning",
+      "observed_avg": 2.2,
+      "min": 2,
+      "target": 2,
+      "max": 3,
+      "division_min": {},
+      "dedicated": []
+    },
+    {
+      "id": "m0702",
+      "label": "07:02am-03:02pm",
+      "start": "07:02",
+      "duration_min": 480,
+      "band": "morning",
+      "observed_avg": 0.5,
+      "min": 0,
+      "target": 1,
+      "max": 2,
+      "division_min": {},
+      "dedicated": []
+    },
+    {
+      "id": "m0730",
+      "label": "07:30am-03:30pm",
+      "start": "07:30",
+      "duration_min": 480,
+      "band": "morning",
+      "observed_avg": 0.7,
+      "min": 0,
+      "target": 1,
+      "max": 1,
+      "division_min": {},
+      "dedicated": [
+        "sijin"
+      ]
+    },
+    {
+      "id": "m0800",
+      "label": "08:00am-04:00pm",
+      "start": "08:00",
+      "duration_min": 480,
+      "band": "morning",
+      "observed_avg": 0.6,
+      "min": 0,
+      "target": 1,
+      "max": 1,
+      "division_min": {},
+      "dedicated": [
+        "sherin"
+      ]
+    },
+    {
+      "id": "d1000",
+      "label": "10:00am-06:00pm",
+      "start": "10:00",
+      "duration_min": 480,
+      "band": "day",
+      "observed_avg": 0.0,
+      "min": 0,
+      "target": 0,
+      "max": 2,
+      "division_min": {},
+      "dedicated": []
+    },
+    {
+      "id": "d1130",
+      "label": "11:30am-07:30pm",
+      "start": "11:30",
+      "duration_min": 480,
+      "band": "day",
+      "observed_avg": 0.6,
+      "min": 0,
+      "target": 1,
+      "max": 1,
+      "division_min": {},
+      "dedicated": [
+        "bittu.eg"
+      ]
+    },
+    {
+      "id": "d1300",
+      "label": "01:00pm-09:00pm",
+      "start": "13:00",
+      "duration_min": 480,
+      "band": "day",
+      "observed_avg": 0.9,
+      "min": 0,
+      "target": 1,
+      "max": 2,
+      "division_min": {},
+      "dedicated": []
+    },
+    {
+      "id": "e1458",
+      "label": "02:58pm-10:58pm",
+      "start": "14:58",
+      "duration_min": 480,
+      "band": "evening",
+      "observed_avg": 2.8,
+      "min": 2,
+      "target": 3,
+      "max": 4,
+      "division_min": {
+        "SA": 1,
+        "SM": 1
+      },
+      "dedicated": []
+    },
+    {
+      "id": "e1500",
+      "label": "3:00pm-11:00pm",
+      "start": "15:00",
+      "duration_min": 480,
+      "band": "evening",
+      "observed_avg": 2.6,
+      "min": 2,
+      "target": 3,
+      "max": 4,
+      "division_min": {},
+      "dedicated": []
+    },
+    {
+      "id": "e1502",
+      "label": "03:02pm-11:02pm",
+      "start": "15:02",
+      "duration_min": 480,
+      "band": "evening",
+      "observed_avg": 0.1,
+      "min": 0,
+      "target": 0,
+      "max": 1,
+      "division_min": {},
+      "dedicated": []
+    },
+    {
+      "id": "e1730",
+      "label": "05:30pm-01:30am",
+      "start": "17:30",
+      "duration_min": 480,
+      "band": "evening",
+      "observed_avg": 0.0,
+      "min": 0,
+      "target": 0,
+      "max": 2,
+      "division_min": {},
+      "dedicated": []
+    },
+    {
+      "id": "n2258",
+      "label": "10:58pm-06:58am",
+      "start": "22:58",
+      "duration_min": 480,
+      "band": "night",
+      "observed_avg": 2.5,
+      "min": 2,
+      "target": 3,
+      "max": 3,
+      "division_min": {
+        "SA": 1,
+        "SM": 1
+      },
+      "dedicated": []
+    },
+    {
+      "id": "n2300",
+      "label": "11:00pm-7:00am",
+      "start": "23:00",
+      "duration_min": 480,
+      "band": "night",
+      "observed_avg": 2.2,
+      "min": 2,
+      "target": 2,
+      "max": 3,
+      "division_min": {},
+      "dedicated": []
+    },
+    {
+      "id": "flexy",
+      "label": "Flexy",
+      "start": "01:00",
+      "duration_min": 480,
+      "band": "flexy",
+      "observed_avg": 0.3,
+      "min": 0,
+      "target": 0,
+      "max": 99,
+      "division_min": {},
+      "dedicated": []
+    }
+  ],
+  "rules": {
+    "min_rest_hours_between_shifts": 11,
+    "max_consecutive_working_days": 6,
+    "max_consecutive_nights": 5,
+    "max_nights_per_month_default": 10,
+    "stickiness_block_days": 3,
+    "fill_order": [
+      "night",
+      "evening",
+      "morning",
+      "day"
+    ],
+    "unassigned_go_to": "flexy",
+    "flexy_default_start": "01:00",
+    "flexy_default_duration_min": 480,
+    "extra_off_placement": "spread",
+    "quota_leave_placement": "adjacent_to_off",
+    "spill_to_max": true,
+    "spill_order": [
+      "morning",
+      "day",
+      "evening",
+      "night"
+    ]
+  },
+  "categories": {
+    "W": "Working Day",
+    "ITW": "In Team Work",
+    "NB": "Non Billable",
+    "OFF": "Off",
+    "CL": "Casual Leave",
+    "ML": "Medical Leave",
+    "ECL": "Emergency Casual Leave",
+    "PV": "Paid Vacation",
+    "UL": "Unpaid Leave",
+    "PH": "Public Holiday",
+    "DL": "Duty Leave",
+    "ED": "Election Day"
+  },
+  "leave_categories": [
+    "OFF",
+    "CL",
+    "ML",
+    "ECL",
+    "PV",
+    "UL",
+    "PH",
+    "DL",
+    "ED"
+  ]
+}

@@ -7,3 +7,7 @@ Each article documents: the symptoms observed, the diagnostic path taken, the co
 ## Articles
 
 - [SolusVM 2 / KVM: Live & Offline Migration Failures After a Hardware/Node Refresh](kb/solusvm-kvm-live-migration-troubleshooting.md) — CPU generation mismatch (`host-passthrough`) blocking live migration, plus an independent AlmaLinux/RHEL 9.8 libvirt regression blocking offline migration. Covers diagnosis, the CPU-baseline fix, a stuck-migration-lock recovery procedure, and a full verification checklist.
+
+## Tools
+
+- [`tools/s4-autofill`](tools/s4-autofill/) — builds the Installation team's monthly S4 shift roster from each tech's off-day / CL / public-holiday answers and their shift preferences (first-in-first-out), validates it against rest and coverage rules, and pushes it into S4.

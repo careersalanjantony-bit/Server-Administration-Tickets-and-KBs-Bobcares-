@@ -1,0 +1,679 @@
+{
+  "_comment": "Roster of record. Divisions from the team lead's message; fixed_off transcribed from the S4 Sep-2026 month summary. 'preferences' is an ordered list of slot ids (best first) and 'prefs_submitted_at' is the FIFO tie-breaker: earliest submission wins a contested slot first. Edit via: s4autofill roster add|remove|set.",
+  "divisions": {
+    "SA": {
+      "label": "SA",
+      "description": "Server Administration"
+    },
+    "SM": {
+      "label": "SM/unicorns",
+      "description": "Server Management / unicorns"
+    },
+    "UNASSIGNED": {
+      "label": "Unassigned",
+      "description": "Seen in S4 but no division supplied yet"
+    }
+  },
+  "techs": [
+    {
+      "id": "akhil.ep",
+      "display_name": "akhil.ep",
+      "email": "akhil.ep@poornam.com",
+      "division": "SA",
+      "active": true,
+      "joined": null,
+      "left": null,
+      "tags": [],
+      "fixed_off": [
+        "Sunday",
+        "Monday"
+      ],
+      "fixed_slot": null,
+      "preferences": [],
+      "avoid_slots": [],
+      "prefs_submitted_at": "2026-01-01T00:00:00",
+      "max_nights_per_month": null,
+      "notes": ""
+    },
+    {
+      "id": "alan.j",
+      "display_name": "alan.j",
+      "email": "alan.j@poornam.com",
+      "division": "SA",
+      "active": true,
+      "joined": null,
+      "left": null,
+      "tags": [],
+      "fixed_off": [
+        "Sunday",
+        "Monday"
+      ],
+      "fixed_slot": null,
+      "preferences": [],
+      "avoid_slots": [],
+      "prefs_submitted_at": "2026-01-01T00:01:00",
+      "max_nights_per_month": null,
+      "notes": ""
+    },
+    {
+      "id": "ameer.ms",
+      "display_name": "ameer.ms",
+      "email": "ameer.ms@poornam.com",
+      "division": "SA",
+      "active": true,
+      "joined": null,
+      "left": null,
+      "tags": [],
+      "fixed_off": [
+        "Tuesday",
+        "Wednesday"
+      ],
+      "fixed_slot": null,
+      "preferences": [],
+      "avoid_slots": [],
+      "prefs_submitted_at": "2026-01-01T00:02:00",
+      "max_nights_per_month": null,
+      "notes": ""
+    },
+    {
+      "id": "anoop.g",
+      "display_name": "anoop.g",
+      "email": "anoop.g@poornam.com",
+      "division": "SA",
+      "active": true,
+      "joined": null,
+      "left": null,
+      "tags": [],
+      "fixed_off": [
+        "Saturday",
+        "Sunday"
+      ],
+      "fixed_slot": null,
+      "preferences": [],
+      "avoid_slots": [],
+      "prefs_submitted_at": "2026-01-01T00:03:00",
+      "max_nights_per_month": null,
+      "notes": ""
+    },
+    {
+      "id": "arathi.j",
+      "display_name": "arathi.j",
+      "email": "arathi.j@poornam.com",
+      "division": "SA",
+      "active": true,
+      "joined": null,
+      "left": null,
+      "tags": [],
+      "fixed_off": [
+        "Saturday",
+        "Sunday"
+      ],
+      "fixed_slot": null,
+      "preferences": [],
+      "avoid_slots": [],
+      "prefs_submitted_at": "2026-01-01T00:04:00",
+      "max_nights_per_month": null,
+      "notes": ""
+    },
+    {
+      "id": "devaprasad.s",
+      "display_name": "devaprasad.s",
+      "email": "devaprasad.s@poornam.com",
+      "division": "SA",
+      "active": true,
+      "joined": null,
+      "left": null,
+      "tags": [],
+      "fixed_off": [
+        "Saturday",
+        "Sunday"
+      ],
+      "fixed_slot": null,
+      "preferences": [],
+      "avoid_slots": [],
+      "prefs_submitted_at": "2026-01-01T00:05:00",
+      "max_nights_per_month": null,
+      "notes": ""
+    },
+    {
+      "id": "kumar.c",
+      "display_name": "kumar.c",
+      "email": "kumar.c@poornam.com",
+      "division": "SA",
+      "active": true,
+      "joined": null,
+      "left": null,
+      "tags": [],
+      "fixed_off": [
+        "Saturday",
+        "Sunday"
+      ],
+      "fixed_slot": null,
+      "preferences": [],
+      "avoid_slots": [],
+      "prefs_submitted_at": "2026-01-01T00:06:00",
+      "max_nights_per_month": null,
+      "notes": "Partial month in Sep-2026 (12 days booked)"
+    },
+    {
+      "id": "mojin.t",
+      "display_name": "mojin.t",
+      "email": "mojin.t@poornam.com",
+      "division": "SA",
+      "active": true,
+      "joined": null,
+      "left": null,
+      "tags": [],
+      "fixed_off": [
+        "Tuesday",
+        "Wednesday"
+      ],
+      "fixed_slot": null,
+      "preferences": [],
+      "avoid_slots": [],
+      "prefs_submitted_at": "2026-01-01T00:07:00",
+      "max_nights_per_month": null,
+      "notes": "Team admin in S4"
+    },
+    {
+      "id": "ranit.b",
+      "display_name": "ranit.b",
+      "email": "ranit.b@poornam.com",
+      "division": "SA",
+      "active": true,
+      "joined": null,
+      "left": null,
+      "tags": [],
+      "fixed_off": [],
+      "fixed_slot": null,
+      "preferences": [],
+      "avoid_slots": [],
+      "prefs_submitted_at": "2026-01-01T00:08:00",
+      "max_nights_per_month": null,
+      "notes": "NOT present in the Sep-2026 S4 sheet - fixed_off needs confirming"
+    },
+    {
+      "id": "sanjo.pr",
+      "display_name": "sanjo.pr",
+      "email": "sanjo.pr@poornam.com",
+      "division": "SA",
+      "active": true,
+      "joined": null,
+      "left": null,
+      "tags": [],
+      "fixed_off": [
+        "Tuesday",
+        "Wednesday"
+      ],
+      "fixed_slot": null,
+      "preferences": [],
+      "avoid_slots": [],
+      "prefs_submitted_at": "2026-01-01T00:09:00",
+      "max_nights_per_month": null,
+      "notes": ""
+    },
+    {
+      "id": "sherin",
+      "display_name": "sherin",
+      "email": "sherin@poornam.com",
+      "division": "SA",
+      "active": true,
+      "joined": null,
+      "left": null,
+      "tags": [],
+      "fixed_off": [
+        "Saturday",
+        "Sunday"
+      ],
+      "fixed_slot": "m0800",
+      "preferences": [],
+      "avoid_slots": [],
+      "prefs_submitted_at": "2026-01-01T00:10:00",
+      "max_nights_per_month": null,
+      "notes": "Dedicated 08:00am-04:00pm every working day"
+    },
+    {
+      "id": "sidharth.ps",
+      "display_name": "sidharth.ps",
+      "email": "sidharth.ps@poornam.com",
+      "division": "SA",
+      "active": true,
+      "joined": null,
+      "left": null,
+      "tags": [],
+      "fixed_off": [
+        "Saturday",
+        "Sunday"
+      ],
+      "fixed_slot": null,
+      "preferences": [],
+      "avoid_slots": [],
+      "prefs_submitted_at": "2026-01-01T00:11:00",
+      "max_nights_per_month": null,
+      "notes": ""
+    },
+    {
+      "id": "akhil.v",
+      "display_name": "akhil.v",
+      "email": "akhil.v@poornam.com",
+      "division": "SA",
+      "active": true,
+      "joined": null,
+      "left": null,
+      "tags": [],
+      "fixed_off": [
+        "Tuesday",
+        "Wednesday"
+      ],
+      "fixed_slot": null,
+      "preferences": [],
+      "avoid_slots": [],
+      "prefs_submitted_at": "2026-01-01T00:12:00",
+      "max_nights_per_month": null,
+      "notes": "Email local-part assumed as akhil.v"
+    },
+    {
+      "id": "rasikh.mk",
+      "display_name": "rasikh.mk",
+      "email": "rasikh.mk@poornam.com",
+      "division": "SA",
+      "active": true,
+      "joined": null,
+      "left": null,
+      "tags": [],
+      "fixed_off": [
+        "Wednesday",
+        "Thursday"
+      ],
+      "fixed_slot": null,
+      "preferences": [],
+      "avoid_slots": [],
+      "prefs_submitted_at": "2026-01-01T00:13:00",
+      "max_nights_per_month": null,
+      "notes": "Listed as 'Rasik' in the roster message"
+    },
+    {
+      "id": "rajkumar.r",
+      "display_name": "rajkumar.r",
+      "email": "rajkumar.r@poornam.com",
+      "division": "SA",
+      "active": true,
+      "joined": null,
+      "left": null,
+      "tags": [],
+      "fixed_off": [
+        "Friday",
+        "Saturday"
+      ],
+      "fixed_slot": null,
+      "preferences": [],
+      "avoid_slots": [],
+      "prefs_submitted_at": "2026-01-01T00:14:00",
+      "max_nights_per_month": null,
+      "notes": "Listed as 'rajkumar' in the roster message"
+    },
+    {
+      "id": "abhijith.mn",
+      "display_name": "abhijith.mn-TTR",
+      "email": "abhijith.mn@poornam.com",
+      "division": "SM",
+      "active": true,
+      "joined": null,
+      "left": null,
+      "tags": [
+        "TTR"
+      ],
+      "fixed_off": [
+        "Sunday"
+      ],
+      "fixed_slot": null,
+      "preferences": [],
+      "avoid_slots": [],
+      "prefs_submitted_at": "2026-01-01T00:15:00",
+      "max_nights_per_month": null,
+      "notes": ""
+    },
+    {
+      "id": "akshay.b",
+      "display_name": "akshay.b",
+      "email": "akshay.b@poornam.com",
+      "division": "SM",
+      "active": true,
+      "joined": null,
+      "left": null,
+      "tags": [],
+      "fixed_off": [
+        "Saturday",
+        "Sunday"
+      ],
+      "fixed_slot": null,
+      "preferences": [],
+      "avoid_slots": [],
+      "prefs_submitted_at": "2026-01-01T00:16:00",
+      "max_nights_per_month": null,
+      "notes": ""
+    },
+    {
+      "id": "anandu.s",
+      "display_name": "anandu.s",
+      "email": "anandu.s@poornam.com",
+      "division": "SM",
+      "active": true,
+      "joined": null,
+      "left": null,
+      "tags": [],
+      "fixed_off": [
+        "Sunday",
+        "Monday"
+      ],
+      "fixed_slot": null,
+      "preferences": [],
+      "avoid_slots": [],
+      "prefs_submitted_at": "2026-01-01T00:17:00",
+      "max_nights_per_month": null,
+      "notes": ""
+    },
+    {
+      "id": "anant.kp",
+      "display_name": "anant.kp-TTR",
+      "email": "anant.kp@poornam.com",
+      "division": "SM",
+      "active": true,
+      "joined": null,
+      "left": null,
+      "tags": [
+        "TTR"
+      ],
+      "fixed_off": [
+        "Sunday"
+      ],
+      "fixed_slot": null,
+      "preferences": [],
+      "avoid_slots": [],
+      "prefs_submitted_at": "2026-01-01T00:18:00",
+      "max_nights_per_month": null,
+      "notes": ""
+    },
+    {
+      "id": "atiqur.mr",
+      "display_name": "atiqur.mr-TTR",
+      "email": "atiqur.mr@poornam.com",
+      "division": "SM",
+      "active": true,
+      "joined": null,
+      "left": null,
+      "tags": [
+        "TTR"
+      ],
+      "fixed_off": [
+        "Sunday"
+      ],
+      "fixed_slot": null,
+      "preferences": [],
+      "avoid_slots": [],
+      "prefs_submitted_at": "2026-01-01T00:19:00",
+      "max_nights_per_month": null,
+      "notes": ""
+    },
+    {
+      "id": "bittu.eg",
+      "display_name": "bittu.eg",
+      "email": "bittu.eg@poornam.com",
+      "division": "SM",
+      "active": true,
+      "joined": null,
+      "left": null,
+      "tags": [],
+      "fixed_off": [
+        "Sunday",
+        "Monday"
+      ],
+      "fixed_slot": "d1130",
+      "preferences": [],
+      "avoid_slots": [],
+      "prefs_submitted_at": "2026-01-01T00:20:00",
+      "max_nights_per_month": null,
+      "notes": "Dedicated 11:30am-07:30pm every working day"
+    },
+    {
+      "id": "kuriakose.j",
+      "display_name": "kuriakose.j",
+      "email": "kuriakose.j@poornam.com",
+      "division": "SM",
+      "active": true,
+      "joined": null,
+      "left": null,
+      "tags": [],
+      "fixed_off": [
+        "Monday",
+        "Tuesday"
+      ],
+      "fixed_slot": null,
+      "preferences": [],
+      "avoid_slots": [],
+      "prefs_submitted_at": "2026-01-01T00:21:00",
+      "max_nights_per_month": null,
+      "notes": ""
+    },
+    {
+      "id": "nandana.sn",
+      "display_name": "nandana.sn",
+      "email": "nandana.sn@poornam.com",
+      "division": "SM",
+      "active": true,
+      "joined": null,
+      "left": null,
+      "tags": [],
+      "fixed_off": [
+        "Sunday",
+        "Monday"
+      ],
+      "fixed_slot": null,
+      "preferences": [],
+      "avoid_slots": [],
+      "prefs_submitted_at": "2026-01-01T00:22:00",
+      "max_nights_per_month": null,
+      "notes": ""
+    },
+    {
+      "id": "nischitha.ns",
+      "display_name": "nischitha.ns",
+      "email": "nischitha.ns@poornam.com",
+      "division": "SM",
+      "active": true,
+      "joined": null,
+      "left": null,
+      "tags": [],
+      "fixed_off": [
+        "Wednesday",
+        "Thursday"
+      ],
+      "fixed_slot": null,
+      "preferences": [],
+      "avoid_slots": [],
+      "prefs_submitted_at": "2026-01-01T00:23:00",
+      "max_nights_per_month": null,
+      "notes": ""
+    },
+    {
+      "id": "noufiya.n",
+      "display_name": "noufiya.n",
+      "email": "noufiya.n@poornam.com",
+      "division": "SM",
+      "active": true,
+      "joined": null,
+      "left": null,
+      "tags": [],
+      "fixed_off": [
+        "Tuesday",
+        "Wednesday"
+      ],
+      "fixed_slot": null,
+      "preferences": [],
+      "avoid_slots": [],
+      "prefs_submitted_at": "2026-01-01T00:24:00",
+      "max_nights_per_month": null,
+      "notes": ""
+    },
+    {
+      "id": "shreyas.m",
+      "display_name": "shreyas.m",
+      "email": "shreyas.m@poornam.com",
+      "division": "SM",
+      "active": true,
+      "joined": null,
+      "left": null,
+      "tags": [],
+      "fixed_off": [
+        "Tuesday",
+        "Wednesday"
+      ],
+      "fixed_slot": null,
+      "preferences": [],
+      "avoid_slots": [],
+      "prefs_submitted_at": "2026-01-01T00:25:00",
+      "max_nights_per_month": null,
+      "notes": ""
+    },
+    {
+      "id": "sufiyan.m",
+      "display_name": "sufiyan.m",
+      "email": "sufiyan.m@poornam.com",
+      "division": "SM",
+      "active": true,
+      "joined": null,
+      "left": null,
+      "tags": [],
+      "fixed_off": [
+        "Friday",
+        "Saturday"
+      ],
+      "fixed_slot": null,
+      "preferences": [],
+      "avoid_slots": [],
+      "prefs_submitted_at": "2026-01-01T00:26:00",
+      "max_nights_per_month": null,
+      "notes": ""
+    },
+    {
+      "id": "roys.yb",
+      "display_name": "roys.yb",
+      "email": "roys.yb@poornam.com",
+      "division": "SM",
+      "active": true,
+      "joined": null,
+      "left": null,
+      "tags": [],
+      "fixed_off": [
+        "Saturday",
+        "Sunday"
+      ],
+      "fixed_slot": null,
+      "preferences": [],
+      "avoid_slots": [],
+      "prefs_submitted_at": "2026-01-01T00:27:00",
+      "max_nights_per_month": null,
+      "notes": ""
+    },
+    {
+      "id": "malavika.p",
+      "display_name": "malavika.p",
+      "email": "malavika.p@poornam.com",
+      "division": "SM",
+      "active": true,
+      "joined": null,
+      "left": null,
+      "tags": [],
+      "fixed_off": [
+        "Friday",
+        "Saturday"
+      ],
+      "fixed_slot": null,
+      "preferences": [],
+      "avoid_slots": [],
+      "prefs_submitted_at": "2026-01-01T00:28:00",
+      "max_nights_per_month": null,
+      "notes": ""
+    },
+    {
+      "id": "sijin",
+      "display_name": "sijin",
+      "email": "sijin@poornam.com",
+      "division": "UNASSIGNED",
+      "active": true,
+      "joined": null,
+      "left": null,
+      "tags": [],
+      "fixed_off": [
+        "Saturday",
+        "Sunday"
+      ],
+      "fixed_slot": "m0730",
+      "preferences": [],
+      "avoid_slots": [],
+      "prefs_submitted_at": "2026-01-01T00:29:00",
+      "max_nights_per_month": null,
+      "notes": "Works 07:30am-03:30pm daily in S4 Sep-2026 but was not in the SA or SM list - please assign a division"
+    },
+    {
+      "id": "annet.pj",
+      "display_name": "annet.pj",
+      "email": "annet.pj@poornam.com",
+      "division": "UNASSIGNED",
+      "active": true,
+      "joined": null,
+      "left": null,
+      "tags": [],
+      "fixed_off": [
+        "Wednesday",
+        "Thursday"
+      ],
+      "fixed_slot": null,
+      "preferences": [],
+      "avoid_slots": [],
+      "prefs_submitted_at": "2026-01-01T00:30:00",
+      "max_nights_per_month": null,
+      "notes": "In S4 Sep-2026 (12 working days) but not in the SA or SM list - please assign a division or deactivate"
+    },
+    {
+      "id": "amrina.s",
+      "display_name": "amrina.s",
+      "email": "amrina.s@poornam.com",
+      "division": "UNASSIGNED",
+      "active": false,
+      "joined": null,
+      "left": null,
+      "tags": [],
+      "fixed_off": [
+        "Friday",
+        "Saturday"
+      ],
+      "fixed_slot": null,
+      "preferences": [],
+      "avoid_slots": [],
+      "prefs_submitted_at": "2026-01-01T00:31:00",
+      "max_nights_per_month": null,
+      "notes": "Zero working days in S4 Sep-2026 - assumed left the team"
+    },
+    {
+      "id": "gowtham.c",
+      "display_name": "gowtham.c",
+      "email": "gowtham.c@poornam.com",
+      "division": "UNASSIGNED",
+      "active": false,
+      "joined": null,
+      "left": null,
+      "tags": [],
+      "fixed_off": [
+        "Monday",
+        "Tuesday"
+      ],
+      "fixed_slot": null,
+      "preferences": [],
+      "avoid_slots": [],
+      "prefs_submitted_at": "2026-01-01T00:32:00",
+      "max_nights_per_month": null,
+      "notes": "Zero working days in S4 Sep-2026 - assumed left the team"
+    }
+  ]
+}
