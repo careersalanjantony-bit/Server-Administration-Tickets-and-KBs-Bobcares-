@@ -1,0 +1,30 @@
+{
+  "_comment": "How to talk to S4. Everything under 'fields' and '*_values' MUST be filled in from the real page before 'push --execute' will run: the names below are placeholders read off the screenshots, not verified. Run `s4autofill inspect --url <the shift edit page> --save` from a machine that can reach S4 and it will fill most of this in for you. Credentials never live here — export S4_USER and S4_PASSWORD.",
+  "base_url": "https://s4.inhouse.net",
+  "view_path": "/index.php?action=view_shift&t={team_id}&y={year}&m={month}",
+  "edit_path": "/index.php?action=view_shift&sdate={start}&edate={end}&t={team_id}&edit_co_shift=N",
+  "post_path": "/index.php?action=view_shift",
+  "login_path": "/index.php?action=login",
+  "login_fields": {"username": "username", "password": "password"},
+  "form_name": "shift",
+  "verify_tls": true,
+  "request_delay_seconds": 0.5,
+  "fields": {
+    "staff": "TODO_staff_field",
+    "category": "TODO_category_field",
+    "start_date": "TODO_start_date_field",
+    "end_date": "TODO_end_date_field",
+    "shift_time": "TODO_shift_time_field",
+    "time_hour": "TODO_time_hour_field",
+    "time_minute": "TODO_time_minute_field",
+    "time_meridiem": "TODO_time_meridiem_field",
+    "duration_hours": "TODO_duration_hours_field",
+    "duration_minutes": "TODO_duration_minutes_field",
+    "reason": "TODO_reason_field",
+    "log": "TODO_log_field"
+  },
+  "constant_fields": {},
+  "category_values": {},
+  "shift_time_values": {},
+  "staff_values": {}
+}
