@@ -15,6 +15,9 @@ from .model import (
 from .monthcal import normalise_weekdays, parse_month
 from .intake import holidays_from_args, read_intake, write_intake, write_slot_legend
 from .export import write_all
+from .formimport import (
+    apply_suggestions, read_notes, read_submissions, to_month_input,
+)
 from .scheduler import build_plan
 from .s4client import S4Client, load_form_config, save_form_config, suggest_mapping
 from .validate import summarise, validate
@@ -137,6 +140,8 @@ def cmd_roster_set(args: argparse.Namespace) -> int:
         tech.flexy_start = args.flexy_start
     if args.max_nights is not None:
         tech.max_nights_per_month = args.max_nights
+    if args.no_night_before_off is not None:
+        tech.no_night_before_off = args.no_night_before_off == "yes"
     if args.active is not None:
         tech.active = args.active == "yes"
     if args.note is not None:
@@ -163,6 +168,60 @@ def cmd_intake(args: argparse.Namespace) -> int:
     print("  public_holiday_days  - public holidays they are taking")
     print("  preference_1..3      - slot ids from the legend, best first")
     print("  leave_dates          - exact dates if they already know them, e.g. '5:CL; 12:PH'")
+    return 0
+
+
+def cmd_import_form(args: argparse.Namespace) -> int:
+    """Turn the team's off-request form export into a month input."""
+    config, roster = _load(args)
+    path = Path(args.file)
+    try:
+        submissions, holidays, warnings = read_submissions(path, args.month)
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+
+    print(f"read {len(submissions)} submission(s) from {path}")
+    if holidays:
+        print("\npublic holidays named in the form:")
+        for iso, name in sorted(holidays.items()):
+            print(f"  {iso}  {name}")
+
+    print("\nsubmission order (this is the FIFO queue):")
+    for position, submission in enumerate(submissions, start=1):
+        marker = "" if roster.has(submission.tech) else "   << not in roster"
+        print(f"  {position:2}. {submission.tech:14} "
+              f"{len(submission.off_days):2} off, {len(submission.leave_days):2} leave{marker}")
+
+    suggestions = read_notes(submissions)
+    if suggestions:
+        print("\nconstraints found in the free-text notes:")
+        for suggestion in suggestions:
+            print(f"  {suggestion.describe()}")
+        if not args.apply_notes:
+            print("\n  These are NOT applied. Re-run with --apply-notes to write them "
+                  "into the roster,\n  or set them yourself with `roster set`.")
+
+    month_input, more = to_month_input(submissions, roster, config, args.month, holidays,
+                                       leave_category=args.leave_category)
+    applied: list[str] = []
+    if args.apply_notes:
+        applied = apply_suggestions(suggestions, roster, config, args.fewer_nights_cap)
+
+    for warning in warnings + more:
+        print(f"[WARNING] {warning}")
+    if applied:
+        print("\napplied from notes:")
+        for line in applied:
+            print(f"  {line}")
+
+    if args.save:
+        save_roster(roster, Path(args.roster) if args.roster else None)
+        saved = save_month_input(month_input)
+        print(f"\nsaved month input to {saved} and updated the roster queue order")
+    else:
+        print("\nNothing written. Re-run with --save to keep this, "
+              f"then: s4autofill plan --month {args.month}")
     return 0
 
 
@@ -333,6 +392,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--flexy-start", metavar="HH:MM")
     p.add_argument("--max-nights", type=int)
     p.add_argument("--active", choices=["yes", "no"])
+    p.add_argument("--no-night-before-off", choices=["yes", "no"])
     p.add_argument("--note")
     p.set_defaults(func=cmd_roster_set)
 
@@ -341,6 +401,20 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--out")
     p.add_argument("--all", action="store_true", help="include inactive techs")
     p.set_defaults(func=cmd_intake)
+
+    p = sub.add_parser("import-form",
+                       help="read the team's off-request form export (.xlsx or .csv)")
+    p.add_argument("file")
+    p.add_argument("--month", required=True, metavar="YYYY-MM")
+    p.add_argument("--leave-category", default="CL",
+                   help="category for the CL/ML/PV column, which does not distinguish them "
+                        "(default: CL)")
+    p.add_argument("--apply-notes", action="store_true",
+                   help="also apply the constraints found in the free-text notes")
+    p.add_argument("--fewer-nights-cap", type=int, default=4,
+                   help="monthly night cap for people who asked for fewer (default: 4)")
+    p.add_argument("--save", action="store_true", help="write the result to disk")
+    p.set_defaults(func=cmd_import_form)
 
     p = sub.add_parser("plan", help="build next month's roster")
     p.add_argument("--month", required=True, metavar="YYYY-MM")

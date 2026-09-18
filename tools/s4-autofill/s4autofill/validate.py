@@ -138,6 +138,14 @@ def check_plan(plan: Plan, roster: Roster, config: ShiftConfig,
                                 f"works {longest_run} days in a row (to {longest_run_end}); "
                                 f"limit is {rules.max_consecutive_working_days}"))
 
+        if tech.no_night_before_off:
+            for previous, following in zip(rows, rows[1:]):
+                if (previous.is_working and not following.is_working
+                        and config.slot(previous.slot_id).is_night):
+                    issues.append(Issue("error", "night-before-off", tech_id,
+                                        f"night shift on {previous.date} runs into their "
+                                        f"{following.category} on {following.date}"))
+
         budget = (rules.max_nights_per_month_default
                   if tech.max_nights_per_month is None else tech.max_nights_per_month)
         if nights > budget:

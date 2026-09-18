@@ -190,7 +190,21 @@ class Scheduler:
                 return False
             if self._consecutive_nights(state, day) >= self.rules.max_consecutive_nights:
                 return False
+            if self._night_lands_before_off(state, day):
+                return False
         return True
+
+    def _night_lands_before_off(self, state: _TechState, day: dt.date) -> bool:
+        """A night shift the evening before a day off eats most of that day.
+
+        People ask for this explicitly ('no night shift before off days',
+        'please avoid scheduling offs immediately after night shifts'), so it
+        is opt-in per tech rather than a blanket rule.
+        """
+        if not state.tech.no_night_before_off:
+            return False
+        tomorrow = state.day_category.get(day + dt.timedelta(days=1))
+        return tomorrow in self.config.leave_categories
 
     def _early_slots(self) -> list[Slot]:
         return [s for s in self.config.assignable if s.min > 0 and s.band in {"morning", "day"}]
@@ -331,6 +345,194 @@ class Scheduler:
                 return False
             if self._consecutive_nights(state, day) >= self.rules.max_consecutive_nights:
                 return False
+            if self._night_lands_before_off(state, day):
+                return False
+        return True
+
+    def _can_spare(self, states: dict[str, _TechState], filled: dict[str, list[str]],
+                   slot: Slot, tech: Tech) -> tuple[bool, str | None]:
+        """Can this slot lose this person? If not, which division must replace them?"""
+        if slot.is_flexy:
+            return True, None
+        needed = slot.division_min.get(tech.division, 0)
+        short_on_division = False
+        if needed:
+            have = sum(1 for t in filled[slot.id] if states[t].tech.division == tech.division)
+            short_on_division = have <= needed
+        if len(filled[slot.id]) > slot.min and not short_on_division:
+            return True, None
+        return False, tech.division if short_on_division else None
+
+    def _steal_into(self, states: dict[str, _TechState], day: dt.date, slot: Slot,
+                    filled: dict[str, list[str]], queue: list[str],
+                    snapshot: dict[str, tuple], division: str | None = None,
+                    visited: set[str] | None = None) -> bool:
+        """Find somebody for this seat, moving people around the day if needed.
+
+        A single swap is not enough. On a day where every person is already on a
+        slot, the only way to fill a seat is a chain: move A off their slot into
+        this one, then backfill A's slot with B, and so on. That is an
+        augmenting path, and without it a day that has a perfectly good
+        assignment still comes out short.
+
+        Nobody's day off is touched — this only rearranges who works what.
+        """
+        visited = set() if visited is None else visited
+        if slot.id in visited:
+            return False
+        visited.add(slot.id)
+
+        for tech_id in list(queue):
+            state = states[tech_id]
+            if division is not None and state.tech.division != division:
+                continue
+            if state.tech.fixed_slot:
+                continue
+            current = state.assigned.get(day)
+            if current == slot.id:
+                continue
+
+            if current is None:
+                if not self._eligible(state, day, slot):
+                    continue
+                self._place(state, day, slot, "reassigned", queue)
+                filled[slot.id].append(tech_id)
+                return True
+
+            donor_slot = self.config.slot(current)
+            if donor_slot.dedicated:
+                continue
+            if not self._can_take_over(state, day, slot, snapshot):
+                continue
+
+            spare, must_replace_with = self._can_spare(states, filled, donor_slot, state.tech)
+            self._unplace(state, day, snapshot, queue)
+            filled[current].remove(tech_id)
+            self._place(state, day, slot, "reassigned", queue)
+            filled[slot.id].append(tech_id)
+            if spare or self._steal_into(states, day, donor_slot, filled, queue,
+                                         snapshot, must_replace_with, visited):
+                return True
+
+            # That chain went nowhere — put them back exactly as they were.
+            self._unplace(state, day, snapshot, queue)
+            filled[slot.id].remove(tech_id)
+            self._place(state, day, donor_slot, "restored", queue)
+            filled[current].append(tech_id)
+        return False
+
+    def _early_needs(self, day: dt.date) -> list[tuple[Slot, str | None, int]]:
+        needs: list[tuple[Slot, str | None, int]] = []
+        for slot in self._early_slots():
+            if slot.dedicated:
+                continue
+            for division, count in sorted(slot.division_min.items()):
+                needs.append((slot, division, count))
+            needs.append((slot, None, slot.min))
+        return needs
+
+    def _early_cover_survives(self, states: dict[str, _TechState], day: dt.date,
+                              candidate: _TechState, slot: Slot) -> bool:
+        """Would putting this person on this shift leave tomorrow morning uncovered?
+
+        Evening and night shifts eat the people who are rested enough to open
+        the next day, and a division floor makes that worse: it is no help that
+        somebody is free tomorrow morning if the slot needs an SA and they are
+        not one.
+        """
+        if candidate.tech.fixed_slot:
+            return True
+        tomorrow = day + dt.timedelta(days=1)
+        if self._early_capable(candidate, tomorrow, assume_end=self._slot_end(day, slot)):
+            return True  # they can still open tomorrow themselves
+        for _slot, division, count in self._early_needs(tomorrow):
+            if count <= 0:
+                continue
+            if division is not None and candidate.tech.division != division:
+                continue
+            others = sum(
+                1 for s in states.values()
+                if s.tech.id != candidate.tech.id and not s.tech.fixed_slot
+                and (division is None or s.tech.division == division)
+                and self._early_capable(s, tomorrow)
+            )
+            if others < count:
+                return False
+        return True
+
+    def _sort_key(self, state: _TechState, slot: Slot) -> tuple:
+        sticky = 0 if (
+            state.last_slot == slot.id
+            and state.current_run < self.rules.stickiness_block_days
+        ) else 1
+        return (
+            state.pref_rank(slot.id),              # people who asked for it come first
+            sticky,                                # then keep continuity within a block
+            state.fifo_pos,                        # then queue order (first in, first served)
+            state.band_counts.get(slot.band, 0),   # then whoever has had this band least
+            state.tech.id,                         # deterministic tie-break
+        )
+
+    def _place(self, state: _TechState, day: dt.date, slot: Slot, source: str,
+               queue: list[str]) -> None:
+        start = self._flexy_start(state, day) if slot.is_flexy else slot.start
+        state.assigned[day] = slot.id
+        state.starts[day] = start
+        state.last_end = (dt.datetime.combine(day, parse_hhmm(start))
+                          + dt.timedelta(minutes=slot.duration_min))
+        state.band_counts[slot.band] = state.band_counts.get(slot.band, 0) + 1
+        if slot.is_night:
+            state.nights += 1
+        state.current_run = state.current_run + 1 if state.last_slot == slot.id else 1
+        state.last_slot = slot.id
+        state.last_working_day = day
+        state.source_of[day] = source
+        # Served: a tech who got a shift they actually asked for goes to the back
+        # of the queue. Filler shifts do not cost them their place.
+        if state.wants(slot.id):
+            state.rotated_from = queue.index(state.tech.id)
+            queue.remove(state.tech.id)
+            queue.append(state.tech.id)
+        else:
+            state.rotated_from = None
+
+    def _snapshot(self, states: dict[str, _TechState]) -> dict[str, tuple]:
+        """Each tech's state as it stood before today, so a move can be undone."""
+        return {
+            tid: (s.last_end, s.last_slot, s.last_working_day, s.current_run,
+                  s.nights, dict(s.band_counts))
+            for tid, s in states.items()
+        }
+
+    def _unplace(self, state: _TechState, day: dt.date, snapshot: dict[str, tuple],
+                 queue: list[str]) -> None:
+        (state.last_end, state.last_slot, state.last_working_day, state.current_run,
+         state.nights, state.band_counts) = snapshot[state.tech.id]
+        state.assigned.pop(day, None)
+        state.starts.pop(day, None)
+        state.source_of.pop(day, None)
+        if state.rotated_from is not None:
+            queue.remove(state.tech.id)
+            queue.insert(min(state.rotated_from, len(queue)), state.tech.id)
+            state.rotated_from = None
+
+    def _can_take_over(self, state: _TechState, day: dt.date, slot: Slot,
+                       snapshot: dict[str, tuple]) -> bool:
+        """Could this tech do `slot` today if we moved them off what they have?"""
+        last_end, _, _, _, nights_before, _ = snapshot[state.tech.id]
+        if slot.id in state.tech.avoid_slots:
+            return False
+        if slot.dedicated and state.tech.id not in slot.dedicated:
+            return False
+        if last_end is not None and self._slot_start(day, slot) - last_end < self._rest:
+            return False
+        if slot.is_night:
+            if nights_before >= self._night_budget(state.tech):
+                return False
+            if self._consecutive_nights(state, day) >= self.rules.max_consecutive_nights:
+                return False
+            if self._night_lands_before_off(state, day):
+                return False
         return True
 
     def _steal_into(self, states: dict[str, _TechState], day: dt.date, slot: Slot,
@@ -390,6 +592,8 @@ class Scheduler:
                 if day not in days:
                     continue
                 existing = state.day_category.get(day)
+                if existing == "OFF" and category == "OFF":
+                    continue  # they asked for a day they already have off
                 if existing == "OFF" and category in leave_categories:
                     self.warnings.append(
                         f"{tech.id}: {iso} is already a fixed off ({weekday_name(day)}); "
@@ -397,6 +601,59 @@ class Scheduler:
                     )
                     continue
                 state.day_category[day] = category
+
+    def _revocable_off(self, state: _TechState, day: dt.date) -> bool:
+        """An off we may take back: a request, not a standing arrangement.
+
+        Fixed weekday offs and the ones people marked unavoidable on the form
+        are never touched.
+        """
+        if state.day_category.get(day) != "OFF":
+            return False
+        if day.weekday() in state.tech.fixed_off_indexes:
+            return False
+        return day.isoformat() not in self.input.unavoidable.get(state.tech.id, [])
+
+    def _available_count(self, states: dict[str, _TechState], day: dt.date) -> int:
+        return sum(1 for s in states.values() if self._available(s, day))
+
+    def _arbitrate_off_requests(self, states: dict[str, _TechState],
+                                days: list[dt.date]) -> None:
+        """Settle over-subscribed days off, first in first out.
+
+        People ask for the same popular days. When more offs are requested than
+        the roster can cover, the ones who asked first keep theirs and the
+        latest requests are handed back — the same queue that settles who gets
+        a shift they wanted. Fixed offs and anything marked unavoidable are
+        never taken back.
+        """
+        if not self.rules.arbitrate_off_requests:
+            return
+        floor = sum(slot.min for slot in self.config.assignable)
+        # Last to ask is first to lose it.
+        latest_first = sorted(states.values(), key=lambda s: s.fifo_pos, reverse=True)
+        for day in days:
+            short = floor - self._available_count(states, day)
+            if short <= 0:
+                continue
+            for state in latest_first:
+                if short <= 0:
+                    break
+                if not self._revocable_off(state, day):
+                    continue
+                del state.day_category[day]
+                short -= 1
+                self.warnings.append(
+                    f"{state.tech.id}: off request for {day.isoformat()} "
+                    f"({weekday_name(day)}) not granted — the day was short of people and "
+                    f"they were #{state.fifo_pos + 1} in the queue."
+                )
+            if short > 0:
+                self.warnings.append(
+                    f"roster: {day.isoformat()} ({weekday_name(day)}) is {short} short of the "
+                    f"{floor}-person floor even after handing back every revocable off request. "
+                    f"Someone's fixed off or an unavoidable request has to move."
+                )
 
     def _slack(self, states: dict[str, _TechState], day: dt.date) -> int:
         """Spare bodies on a day: available people minus the coverage floor."""
@@ -713,6 +970,7 @@ class Scheduler:
         queue = [t.id for t in order]
 
         self._apply_fixed_and_dated(states, days)
+        self._arbitrate_off_requests(states, days)
         self._place_quota_leave(states, days)
         self._place_extra_offs(states, days)
 

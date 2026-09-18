@@ -25,13 +25,15 @@
       "left": null,
       "tags": [],
       "fixed_off": [
-        "Sunday",
-        "Monday"
+        "Monday",
+        "Sunday"
       ],
       "fixed_slot": null,
       "preferences": [],
       "avoid_slots": [],
-      "prefs_submitted_at": "2026-01-01T00:00:00",
+      "prefs_submitted_at": "2026-09-01T00:03:00",
+      "flexy_start": null,
+      "no_night_before_off": false,
       "max_nights_per_month": null,
       "notes": ""
     },
@@ -45,15 +47,17 @@
       "left": null,
       "tags": [],
       "fixed_off": [
-        "Sunday",
-        "Monday"
+        "Monday",
+        "Sunday"
       ],
       "fixed_slot": null,
       "preferences": [],
       "avoid_slots": [],
-      "prefs_submitted_at": "2026-01-01T00:01:00",
-      "max_nights_per_month": null,
-      "notes": ""
+      "prefs_submitted_at": "2026-09-01T00:05:00",
+      "flexy_start": null,
+      "no_night_before_off": true,
+      "max_nights_per_month": 4,
+      "notes": "Fixed Off - Sunday, Monday. Kindly arrange my offs in sequence. Please avoid scheduling offs immediately after night shifts. Also, please don't assign me night shifts as much as possible."
     },
     {
       "id": "ameer.ms",
@@ -71,9 +75,11 @@
       "fixed_slot": null,
       "preferences": [],
       "avoid_slots": [],
-      "prefs_submitted_at": "2026-01-01T00:02:00",
+      "prefs_submitted_at": "2026-09-01T00:17:00",
+      "flexy_start": null,
+      "no_night_before_off": false,
       "max_nights_per_month": null,
-      "notes": ""
+      "notes": "No mrng shift preferred"
     },
     {
       "id": "anoop.g",
@@ -89,11 +95,20 @@
         "Sunday"
       ],
       "fixed_slot": null,
-      "preferences": [],
-      "avoid_slots": [],
-      "prefs_submitted_at": "2026-01-01T00:03:00",
+      "preferences": [
+        "m0658",
+        "m0700",
+        "m0702"
+      ],
+      "avoid_slots": [
+        "n2258",
+        "n2300"
+      ],
+      "prefs_submitted_at": "2026-09-01T00:04:00",
+      "flexy_start": null,
+      "no_night_before_off": false,
       "max_nights_per_month": null,
-      "notes": ""
+      "notes": "Saturday and Sunday off No night shift morning shift preferred Unavoidalble: 12,13 Off dates: 5,6,12,13,19,20,26,27"
     },
     {
       "id": "arathi.j",
@@ -111,7 +126,9 @@
       "fixed_slot": null,
       "preferences": [],
       "avoid_slots": [],
-      "prefs_submitted_at": "2026-01-01T00:04:00",
+      "prefs_submitted_at": "2026-09-01T00:15:00",
+      "flexy_start": null,
+      "no_night_before_off": false,
       "max_nights_per_month": null,
       "notes": ""
     },
@@ -132,6 +149,8 @@
       "preferences": [],
       "avoid_slots": [],
       "prefs_submitted_at": "2026-01-01T00:05:00",
+      "flexy_start": null,
+      "no_night_before_off": false,
       "max_nights_per_month": null,
       "notes": ""
     },
@@ -151,7 +170,9 @@
       "fixed_slot": null,
       "preferences": [],
       "avoid_slots": [],
-      "prefs_submitted_at": "2026-01-01T00:06:00",
+      "prefs_submitted_at": "2026-09-01T00:06:00",
+      "flexy_start": null,
+      "no_night_before_off": false,
       "max_nights_per_month": null,
       "notes": "Partial month in Sep-2026 (12 days booked)"
     },
@@ -171,26 +192,30 @@
       "fixed_slot": null,
       "preferences": [],
       "avoid_slots": [],
-      "prefs_submitted_at": "2026-01-01T00:07:00",
+      "prefs_submitted_at": "2026-09-01T00:09:00",
+      "flexy_start": null,
+      "no_night_before_off": false,
       "max_nights_per_month": null,
-      "notes": "Team admin in S4"
+      "notes": "b"
     },
     {
       "id": "ranit.b",
       "display_name": "ranit.b",
       "email": "ranit.b@poornam.com",
       "division": "SA",
-      "active": true,
+      "active": false,
       "joined": null,
-      "left": null,
+      "left": "2026-10-01",
       "tags": [],
       "fixed_off": [],
       "fixed_slot": null,
       "preferences": [],
       "avoid_slots": [],
       "prefs_submitted_at": "2026-01-01T00:08:00",
+      "flexy_start": null,
+      "no_night_before_off": false,
       "max_nights_per_month": null,
-      "notes": "NOT present in the Sep-2026 S4 sheet - fixed_off needs confirming"
+      "notes": "Left the team."
     },
     {
       "id": "sanjo.pr",
@@ -208,9 +233,11 @@
       "fixed_slot": null,
       "preferences": [],
       "avoid_slots": [],
-      "prefs_submitted_at": "2026-01-01T00:09:00",
+      "prefs_submitted_at": "2026-09-01T00:01:00",
+      "flexy_start": null,
+      "no_night_before_off": false,
       "max_nights_per_month": null,
-      "notes": ""
+      "notes": "4,5,9,10 >> MUST OFF SUNDAYS OFF MORNING SHIFTS ON SATURDAYS 14. 15 >> OFF"
     },
     {
       "id": "sherin",
@@ -229,6 +256,8 @@
       "preferences": [],
       "avoid_slots": [],
       "prefs_submitted_at": "2026-01-01T00:10:00",
+      "flexy_start": null,
+      "no_night_before_off": false,
       "max_nights_per_month": null,
       "notes": "Dedicated 08:00am-04:00pm every working day"
     },
@@ -246,11 +275,16 @@
         "Sunday"
       ],
       "fixed_slot": null,
-      "preferences": [],
+      "preferences": [
+        "e1458",
+        "e1500"
+      ],
       "avoid_slots": [],
-      "prefs_submitted_at": "2026-01-01T00:11:00",
-      "max_nights_per_month": null,
-      "notes": ""
+      "prefs_submitted_at": "2026-09-01T00:14:00",
+      "flexy_start": null,
+      "no_night_before_off": false,
+      "max_nights_per_month": 4,
+      "notes": "Less night shift. Evening shift preferred more. Please try to put morning shift before Off and evening after off"
     },
     {
       "id": "akhil.v",
@@ -269,6 +303,8 @@
       "preferences": [],
       "avoid_slots": [],
       "prefs_submitted_at": "2026-01-01T00:12:00",
+      "flexy_start": null,
+      "no_night_before_off": false,
       "max_nights_per_month": null,
       "notes": "Email local-part assumed as akhil.v"
     },
@@ -289,6 +325,8 @@
       "preferences": [],
       "avoid_slots": [],
       "prefs_submitted_at": "2026-01-01T00:13:00",
+      "flexy_start": null,
+      "no_night_before_off": false,
       "max_nights_per_month": null,
       "notes": "Listed as 'Rasik' in the roster message"
     },
@@ -309,6 +347,8 @@
       "preferences": [],
       "avoid_slots": [],
       "prefs_submitted_at": "2026-01-01T00:14:00",
+      "flexy_start": null,
+      "no_night_before_off": false,
       "max_nights_per_month": null,
       "notes": "Listed as 'rajkumar' in the roster message"
     },
@@ -330,6 +370,8 @@
       "preferences": [],
       "avoid_slots": [],
       "prefs_submitted_at": "2026-01-01T00:15:00",
+      "flexy_start": null,
+      "no_night_before_off": false,
       "max_nights_per_month": null,
       "notes": ""
     },
@@ -348,10 +390,15 @@
       ],
       "fixed_slot": null,
       "preferences": [],
-      "avoid_slots": [],
-      "prefs_submitted_at": "2026-01-01T00:16:00",
+      "avoid_slots": [
+        "n2258",
+        "n2300"
+      ],
+      "prefs_submitted_at": "2026-09-01T00:10:00",
+      "flexy_start": null,
+      "no_night_before_off": false,
       "max_nights_per_month": null,
-      "notes": ""
+      "notes": "Please avoid night shift"
     },
     {
       "id": "anandu.s",
@@ -363,15 +410,17 @@
       "left": null,
       "tags": [],
       "fixed_off": [
-        "Sunday",
-        "Monday"
+        "Monday",
+        "Sunday"
       ],
       "fixed_slot": null,
       "preferences": [],
       "avoid_slots": [],
-      "prefs_submitted_at": "2026-01-01T00:17:00",
+      "prefs_submitted_at": "2026-09-01T00:08:00",
+      "flexy_start": null,
+      "no_night_before_off": false,
       "max_nights_per_month": null,
-      "notes": ""
+      "notes": "7,8,13,14,15ml,16,21,22,29,30"
     },
     {
       "id": "anant.kp",
@@ -391,6 +440,8 @@
       "preferences": [],
       "avoid_slots": [],
       "prefs_submitted_at": "2026-01-01T00:18:00",
+      "flexy_start": null,
+      "no_night_before_off": false,
       "max_nights_per_month": null,
       "notes": ""
     },
@@ -412,6 +463,8 @@
       "preferences": [],
       "avoid_slots": [],
       "prefs_submitted_at": "2026-01-01T00:19:00",
+      "flexy_start": null,
+      "no_night_before_off": false,
       "max_nights_per_month": null,
       "notes": ""
     },
@@ -425,13 +478,15 @@
       "left": null,
       "tags": [],
       "fixed_off": [
-        "Sunday",
-        "Monday"
+        "Monday",
+        "Sunday"
       ],
       "fixed_slot": "d1130",
       "preferences": [],
       "avoid_slots": [],
       "prefs_submitted_at": "2026-01-01T00:20:00",
+      "flexy_start": null,
+      "no_night_before_off": false,
       "max_nights_per_month": null,
       "notes": "Dedicated 11:30am-07:30pm every working day"
     },
@@ -451,9 +506,11 @@
       "fixed_slot": null,
       "preferences": [],
       "avoid_slots": [],
-      "prefs_submitted_at": "2026-01-01T00:21:00",
+      "prefs_submitted_at": "2026-09-01T00:11:00",
+      "flexy_start": null,
+      "no_night_before_off": true,
       "max_nights_per_month": null,
-      "notes": ""
+      "notes": "I am ok with night shifts, reduce afternoon shifts if possible. No night shift before off days."
     },
     {
       "id": "nandana.sn",
@@ -465,13 +522,15 @@
       "left": null,
       "tags": [],
       "fixed_off": [
-        "Sunday",
-        "Monday"
+        "Monday",
+        "Sunday"
       ],
       "fixed_slot": null,
       "preferences": [],
       "avoid_slots": [],
-      "prefs_submitted_at": "2026-01-01T00:22:00",
+      "prefs_submitted_at": "2026-09-01T00:13:00",
+      "flexy_start": null,
+      "no_night_before_off": false,
       "max_nights_per_month": null,
       "notes": ""
     },
@@ -491,9 +550,11 @@
       "fixed_slot": null,
       "preferences": [],
       "avoid_slots": [],
-      "prefs_submitted_at": "2026-01-01T00:23:00",
+      "prefs_submitted_at": "2026-09-01T00:07:00",
+      "flexy_start": null,
+      "no_night_before_off": false,
       "max_nights_per_month": null,
-      "notes": ""
+      "notes": "4-off 1-afternoon 6-morning 10-off 11-off 16-cl 17-ml"
     },
     {
       "id": "noufiya.n",
@@ -511,7 +572,9 @@
       "fixed_slot": null,
       "preferences": [],
       "avoid_slots": [],
-      "prefs_submitted_at": "2026-01-01T00:24:00",
+      "prefs_submitted_at": "2026-09-01T00:02:00",
+      "flexy_start": null,
+      "no_night_before_off": false,
       "max_nights_per_month": null,
       "notes": ""
     },
@@ -531,9 +594,11 @@
       "fixed_slot": null,
       "preferences": [],
       "avoid_slots": [],
-      "prefs_submitted_at": "2026-01-01T00:25:00",
-      "max_nights_per_month": null,
-      "notes": ""
+      "prefs_submitted_at": "2026-09-01T00:12:00",
+      "flexy_start": null,
+      "no_night_before_off": false,
+      "max_nights_per_month": 4,
+      "notes": "Less night"
     },
     {
       "id": "sufiyan.m",
@@ -551,9 +616,11 @@
       "fixed_slot": null,
       "preferences": [],
       "avoid_slots": [],
-      "prefs_submitted_at": "2026-01-01T00:26:00",
+      "prefs_submitted_at": "2026-09-01T00:16:00",
+      "flexy_start": null,
+      "no_night_before_off": false,
       "max_nights_per_month": null,
-      "notes": ""
+      "notes": "9 ml 14 cl 16 cl 21 cl 28 ml"
     },
     {
       "id": "roys.yb",
@@ -572,6 +639,8 @@
       "preferences": [],
       "avoid_slots": [],
       "prefs_submitted_at": "2026-01-01T00:27:00",
+      "flexy_start": null,
+      "no_night_before_off": false,
       "max_nights_per_month": null,
       "notes": ""
     },
@@ -592,6 +661,8 @@
       "preferences": [],
       "avoid_slots": [],
       "prefs_submitted_at": "2026-01-01T00:28:00",
+      "flexy_start": null,
+      "no_night_before_off": false,
       "max_nights_per_month": null,
       "notes": ""
     },
@@ -600,29 +671,31 @@
       "display_name": "sijin",
       "email": "sijin@poornam.com",
       "division": "UNASSIGNED",
-      "active": true,
+      "active": false,
       "joined": null,
-      "left": null,
+      "left": "2026-10-01",
       "tags": [],
       "fixed_off": [
         "Saturday",
         "Sunday"
       ],
-      "fixed_slot": "m0730",
+      "fixed_slot": null,
       "preferences": [],
       "avoid_slots": [],
       "prefs_submitted_at": "2026-01-01T00:29:00",
+      "flexy_start": null,
+      "no_night_before_off": false,
       "max_nights_per_month": null,
-      "notes": "Works 07:30am-03:30pm daily in S4 Sep-2026 but was not in the SA or SM list - please assign a division"
+      "notes": "Left the team. Previously owned the dedicated 07:30am-03:30pm slot."
     },
     {
       "id": "annet.pj",
       "display_name": "annet.pj",
       "email": "annet.pj@poornam.com",
       "division": "UNASSIGNED",
-      "active": true,
+      "active": false,
       "joined": null,
-      "left": null,
+      "left": "2026-10-01",
       "tags": [],
       "fixed_off": [
         "Wednesday",
@@ -632,8 +705,10 @@
       "preferences": [],
       "avoid_slots": [],
       "prefs_submitted_at": "2026-01-01T00:30:00",
+      "flexy_start": null,
+      "no_night_before_off": false,
       "max_nights_per_month": null,
-      "notes": "In S4 Sep-2026 (12 working days) but not in the SA or SM list - please assign a division or deactivate"
+      "notes": "Left the team."
     },
     {
       "id": "amrina.s",
@@ -652,6 +727,8 @@
       "preferences": [],
       "avoid_slots": [],
       "prefs_submitted_at": "2026-01-01T00:31:00",
+      "flexy_start": null,
+      "no_night_before_off": false,
       "max_nights_per_month": null,
       "notes": "Zero working days in S4 Sep-2026 - assumed left the team"
     },
@@ -672,6 +749,8 @@
       "preferences": [],
       "avoid_slots": [],
       "prefs_submitted_at": "2026-01-01T00:32:00",
+      "flexy_start": null,
+      "no_night_before_off": false,
       "max_nights_per_month": null,
       "notes": "Zero working days in S4 Sep-2026 - assumed left the team"
     }

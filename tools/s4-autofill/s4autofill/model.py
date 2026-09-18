@@ -51,6 +51,7 @@ class Rules:
     quota_leave_placement: str = "adjacent_to_off"
     spill_to_max: bool = True
     spill_order: tuple[str, ...] = ("morning", "day", "evening", "night")
+    arbitrate_off_requests: bool = True
 
 
 @dataclass
@@ -69,6 +70,7 @@ class Tech:
     avoid_slots: list[str] = field(default_factory=list)
     prefs_submitted_at: str = "2999-01-01T00:00:00"
     flexy_start: str | None = None
+    no_night_before_off: bool = False
     max_nights_per_month: int | None = None
     notes: str = ""
 
@@ -104,6 +106,7 @@ class Tech:
             "avoid_slots": self.avoid_slots,
             "prefs_submitted_at": self.prefs_submitted_at,
             "flexy_start": self.flexy_start,
+            "no_night_before_off": self.no_night_before_off,
             "max_nights_per_month": self.max_nights_per_month,
             "notes": self.notes,
         }
@@ -165,6 +168,7 @@ class MonthInput:
     month: str
     public_holidays: dict[str, str] = field(default_factory=dict)   # 'YYYY-MM-DD' -> name
     leave: dict[str, dict[str, str]] = field(default_factory=dict)  # tech -> date -> category
+    unavoidable: dict[str, list[str]] = field(default_factory=dict)  # tech -> dates that stand
     targets: dict[str, dict[str, int]] = field(default_factory=dict)  # tech -> {off_days, cl, ph,...}
     notes: str = ""
 
@@ -177,6 +181,7 @@ class MonthInput:
             "public_holidays": self.public_holidays,
             "targets": self.targets,
             "leave": self.leave,
+            "unavoidable": self.unavoidable,
             "notes": self.notes,
         }
 
@@ -241,6 +246,7 @@ def load_month_input(month: str, path: Path | None = None) -> MonthInput:
         month=raw.get("month", month),
         public_holidays=raw.get("public_holidays", {}),
         leave=raw.get("leave", {}),
+        unavoidable=raw.get("unavoidable", {}),
         targets=raw.get("targets", {}),
         notes=raw.get("notes", ""),
     )

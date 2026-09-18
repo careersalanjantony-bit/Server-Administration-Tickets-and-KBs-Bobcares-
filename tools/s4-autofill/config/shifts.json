@@ -58,11 +58,9 @@
       "observed_avg": 0.7,
       "min": 0,
       "target": 1,
-      "max": 1,
+      "max": 2,
       "division_min": {},
-      "dedicated": [
-        "sijin"
-      ]
+      "dedicated": []
     },
     {
       "id": "m0800",
@@ -241,7 +239,8 @@
       "day",
       "evening",
       "night"
-    ]
+    ],
+    "arbitrate_off_requests": true
   },
   "categories": {
     "W": "Working Day",

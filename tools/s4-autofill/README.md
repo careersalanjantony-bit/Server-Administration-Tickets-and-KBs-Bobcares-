@@ -12,17 +12,18 @@ Python 3.11+, standard library only. No install step.
 
 ## The short version
 
+You already collect the off requests through a form. Start from that export.
+
 ```bash
 cd tools/s4-autofill
 
-# 1. Ask everyone their offs / CL / public holidays
-python3 -m s4autofill intake --month 2026-11
+# 1. Import the month's "off form submissions" export (.xlsx or .csv)
+python3 -m s4autofill import-form 'November off form submissions.xlsx' \
+    --month 2026-11 --apply-notes --save
 
-# 2. Collect the filled-in sheet, then build the month
+# 2. Build the month
 python3 -m s4autofill plan --month 2026-11 \
-    --intake intake/2026-11/intake-2026-11.csv \
-    --holiday 2026-11-14="Children's Day" \
-    --save-input
+    --holiday 2026-11-14="Children's Day"
 
 # 3. Open out/2026-11/preview.html and read it
 
@@ -38,9 +39,57 @@ python3 -m s4autofill push --month 2026-11 --execute
 
 ---
 
-## What to ask each tech
+## Importing the off-request form
 
-`intake` writes one CSV row per person. That sheet *is* the question — send it
+`import-form` reads the sheet the team already fills in every month:
+
+    ID | ID 2 | Tech Name | Choose ALL OFF days | Unavoidable Off- 1 |
+    Unavoidable Off- 2 | Holiday 1 <name> <date> | Holiday 2 <name> <date> |
+    choose LEAVE(CL, ML & PV) days only | Any preferences and notes | Source
+
+It reads `.xlsx` directly (no dependencies) or `.csv`. Column headers are
+matched loosely, so the holiday columns keep working when the holiday changes.
+
+Three things it takes from the sheet beyond the dates:
+
+- **`ID 2` is the submission order**, and becomes each person's place in the
+  FIFO queue. Nothing else needs filling in for the queue to work.
+- **The two "Unavoidable Off" columns** mark requests that must not be handed
+  back when a day is over-subscribed (see arbitration below).
+- **The holiday column headers** carry the holiday's name and date, so public
+  holidays are picked up without being typed again.
+
+The CL/ML/PV column does not say which of the three a day is; everything in it
+becomes `CL` unless you pass `--leave-category`.
+
+### The free-text notes
+
+The notes column carries real constraints. `import-form` reads it and prints
+what it finds, but **applies nothing** unless you pass `--apply-notes`:
+
+```
+anoop.g      avoid_nights         never schedule nights            ← "No night shift"
+anoop.g      prefer_mornings      prefers morning shifts           ← "morning shift preferred"
+alan.j       no_night_before_off  no night running into a day off  ← "offs immediately after night"
+alan.j       fewer_nights         nights kept down (softened)      ← "don't assign me night shifts as much"
+kuriakose.j  no_night_before_off  no night running into a day off  ← "night shift before off"
+sidharth.ps  prefer_evenings      prefers evening shifts           ← "Evening shift preferred"
+```
+
+It reads sentence by sentence, which matters more than it sounds. Against the
+team's real September notes, a naive reader got three of these badly wrong: it
+saw the "no" inside *after****no****on*, it turned "No night shift **morning
+shift preferred**" into a ban on mornings, and it flagged kuriakose.j — who
+wrote "I am ok with night shifts" — as refusing them. Those three are locked in
+as regression tests. Softened wording ("as much as possible") is read as
+*fewer*, not *never*.
+
+Always read the suggestions before applying them. Anything it misses, set by
+hand with `roster set`.
+
+## The manual sheet
+
+If you would rather not use the form export, `intake` writes one CSV row per person. That sheet *is* the question — send it
 round, or paste it into a spreadsheet and share it. The columns people fill in:
 
 | Column | What you are asking |
@@ -67,12 +116,14 @@ working runs, and public holidays can only land on dates you declared with
 In order:
 
 1. **Days off** — fixed weekday pattern, then any dated leave from the sheet.
-2. **Quota leave** — the CL / PH / PV counts, placed on days the team can spare.
-3. **Extra offs** — when someone asked for more days off than their pattern gives.
-4. **Dedicated slots** — permanent shift owners (currently `sijin` 07:30,
-   `sherin` 08:00, `bittu.eg` 11:30) get their slot every working day.
-5. **Coverage** — every slot filled to its minimum, then towards its target.
-6. **Flexy** — whoever is left, with a per-person time, exactly as S4 stores it.
+2. **Arbitration** — if more people asked for a day off than the roster can
+   cover, the latest requests are handed back (see below).
+3. **Quota leave** — the CL / PH / PV counts, placed on days the team can spare.
+4. **Extra offs** — when someone asked for more days off than their pattern gives.
+5. **Dedicated slots** — permanent shift owners (currently `sherin` 08:00 and
+   `bittu.eg` 11:30) get their slot every working day.
+6. **Coverage** — every slot filled to its minimum, then towards its target.
+7. **Flexy** — whoever is left, with a per-person time, exactly as S4 stores it.
 
 ### First in, first out
 
@@ -81,6 +132,19 @@ one who asked first gets it — **and then goes to the back of the queue**. Bein
 given a shift you did *not* ask for costs you nothing: you keep your place and
 win the next contest. Over a month that splits a popular slot evenly between
 everyone who wants it, in the order they asked.
+
+### Over-subscribed days off
+
+People ask for the same popular days. When more offs are requested than the
+roster can cover, the same queue settles it: whoever asked first keeps theirs,
+and the latest requests are handed back, one at a time, until the day is
+coverable. Fixed weekday offs and anything in the form's "Unavoidable Off"
+columns are never taken back. Every hand-back is reported by name, date and
+queue position, so you can tell the person why.
+
+If a day is still short after every revocable request has been handed back, it
+says so plainly — that one needs a fixed off or an unavoidable request to move,
+which is a management decision, not a scheduling one.
 
 Someone who lists no preference is never disadvantaged — they are placed by
 whoever has had that band least, so nights stay spread.
@@ -94,15 +158,24 @@ whoever has had that band least, so nights stay spread.
 | Nights per month | 10 | `rules.max_nights_per_month_default`, per-person override on the tech |
 | Working days in a row | 6 (warning, not blocked) | `rules.max_consecutive_working_days` |
 | `avoid_slots` | never assigned | per tech |
+| No night before a day off | off by default | `no_night_before_off` per tech |
 | Coverage minimums | per slot, plus per-division floors | `config/shifts.json` |
 
-Two things make thin days work. Coverage is filled **most-constrained slot
-first** — the seat with the fewest people who could take it gets filled before
-the easy ones, which is how a Sunday with two thirds of the team off still gets
-covered. And before anyone is put on a late shift, the scheduler checks that
-enough rested people — of the right division — are left to open the next
-morning; if the day still ends short, it pulls somebody forward onto an earlier
-shift rather than leaving a gap.
+Three things make thin days work.
+
+Coverage is filled **most-constrained slot first** — the seat with the fewest
+people who could take it gets filled before the easy ones, which is how a
+Sunday with most of the team off still gets covered at all.
+
+Before anyone goes on a late shift, the scheduler checks that enough rested
+people **of the right division** are left to open the next morning; if the day
+still ends short, it pulls somebody forward onto an earlier shift.
+
+And when a seat cannot be filled directly, it searches for an **augmenting
+path**: move A onto the empty seat, backfill A's slot with B, backfill B's with
+C, and so on. A single swap is not enough on a day where everybody is already
+placed — without the chain, days that have a perfectly valid assignment still
+come out short.
 
 Anything it genuinely cannot solve is reported as a `coverage-shortfall`, never
 hidden. A shortfall means the roster is short of people that day, and the fix
@@ -201,13 +274,33 @@ python3 -m pytest tests/ -q
 
 ---
 
+## Sundays are the binding constraint
+
+**16 of the 28 active techs are off on Sundays**, which leaves 12 people
+against a 12-person coverage floor — no margin at all. Every Sunday works, but
+one unplanned sick day breaks it, and once everyone's stated night
+restrictions are honoured a few Sundays cannot be covered at all.
+
+Three levers were tested against October 2026, and each one clears it
+completely:
+
+| Change | Result |
+|---|---|
+| as-is | 3 shortfalls |
+| move one weekend person's fixed off to midweek (e.g. `roys.yb` or `akshay.b`) | clean |
+| lower the `11:00pm-7:00am` minimum from 2 to 1 | clean |
+
+None of these is applied — it is a management decision. Pick one and either
+`roster set <id> --fixed-off Monday Tuesday` or edit `min` in
+`config/shifts.json`.
+
 ## Known gaps
 
-- `ranit.b` is in the SA list but not in the September S4 sheet, so their fixed
-  off days are unknown and the validator warns until you set them.
-- `sijin` and `annet.pj` work in S4 but were not on either division list.
-  They are marked `UNASSIGNED`, which means division floors cannot count them.
 - `akhil.v`, `rasikh.mk` and `rajkumar.r` have assumed email local-parts.
-- `amrina.s` and `gowtham.c` had zero days in September and are marked inactive.
-- Nobody has preferences yet — the first `intake` round fills them in. Until
-  then everyone is treated as having no preference, which is fair but arbitrary.
+- `sijin`, `annet.pj`, `ranit.b`, `amrina.s` and `gowtham.c` are marked
+  inactive (left the team). `sijin` owned the 07:30am-03:30pm slot, which is
+  now an ordinary slot with no dedicated owner.
+- Preferences come from the September form notes. They are re-read from each
+  month's form export, so they stay current on their own.
+- Anyone who does not submit the form is scheduled on their fixed offs only,
+  and `import-form` lists them so you can chase them.
