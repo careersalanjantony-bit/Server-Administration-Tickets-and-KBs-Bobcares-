@@ -7,3 +7,4 @@ Each article documents: the symptoms observed, the diagnostic path taken, the co
 ## Articles
 
 - [SolusVM 2 / KVM: Live & Offline Migration Failures After a Hardware/Node Refresh](kb/solusvm-kvm-live-migration-troubleshooting.md) — CPU generation mismatch (`host-passthrough`) blocking live migration, plus an independent AlmaLinux/RHEL 9.8 libvirt regression blocking offline migration. Covers diagnosis, the CPU-baseline fix, a stuck-migration-lock recovery procedure, and a full verification checklist.
+- [PHP OPcache: RAM-Aware Tuning Across Multiple PHP Versions (cPanel/EA4 + PHP-FPM)](kb/php-opcache-tuning-multi-php-servers.md) — how OPcache allocates shared memory (one segment per PHP-FPM master, not per user or worker), a RAM-budgeted sizing framework for servers running several PHP versions side by side, making the settings survive PHP package updates, verification from the live FPM process, and ruling out the bottlenecks OPcache tuning will not fix.
