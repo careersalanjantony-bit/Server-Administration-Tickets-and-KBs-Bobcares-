@@ -20,7 +20,7 @@
       const li = document.createElement('li');
       const a = document.createElement('span');
       a.className = 'a';
-      a.textContent = e.a;
+      a.textContent = e.a.split('\n').join(' • ');
       li.append(e.q + ' → ', a);
       ol.append(li);
     }

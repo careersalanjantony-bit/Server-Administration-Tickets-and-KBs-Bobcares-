@@ -32,12 +32,18 @@
   const visible = (el) => !!(el && el.getClientRects().length && getComputedStyle(el).visibility !== 'hidden');
   const textOf = (el) => (el ? el.textContent.replace(/\s+/g, ' ').trim() : '');
 
-  function answerInputs() {
-    const all = [...document.querySelectorAll('input[type=radio], input[type=checkbox]')];
-    // Chamilo answer inputs are named choice[<questionId>] / choice[<qid>][<aid>].
-    const usable = all.filter((i) => !i.disabled);
-    const choice = usable.filter((i) => /^choice/.test(i.name || ''));
-    return choice.length ? choice : usable.filter((i) => !/remind|review|marked/i.test(i.name || '') && visible(i));
+  // Chamilo names every answer control choice[<questionId>]...: radios and
+  // checkboxes (single/multiple answer), selects (matching / ordering) and
+  // text fields (fill in the blanks / open question). On customised pages we
+  // fall back to any visible radio or checkbox.
+  function answerControls() {
+    const usable = (sel) => [...document.querySelectorAll(sel)].filter((el) => !el.disabled);
+    const choice = (el) => /^choice/.test(el.name || '');
+    const boxes = usable('input[type=radio], input[type=checkbox]');
+    const named = boxes.filter(choice);
+    const picked = named.length ? named : boxes.filter((i) => !/remind|review|marked/i.test(i.name || '') && visible(i));
+    const others = usable('select, input[type=text], textarea').filter(choice);
+    return picked.concat(others).sort((a, b) => (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1));
   }
 
   function optionLabelEl(input) {
@@ -68,36 +74,100 @@
     return candidates[candidates.length - 1] || null;
   }
 
+  // ---- drop-down (matching / ordering) questions
+
+  const PLACEHOLDER = /^(-+|\.+|select\b.*|choose\b.*)?$/i;
+
+  // Chamilo matching questions list the right-hand side as "A. text" and the
+  // drop-downs only show the letters; map the letters back to their text.
+  function letterMap(container) {
+    const map = {};
+    if (!container) return map;
+    for (const el of container.querySelectorAll('td, li, p, div, span, label')) {
+      if (el.querySelector('select, input')) continue;
+      const t = textOf(el);
+      const m = t.length < 400 && t.match(/^([A-Z])\s*[.)]\s+(.+)$/);
+      if (m && !map[m[1]]) map[m[1]] = m[2];
+    }
+    return map;
+  }
+
+  // Text that labels one drop-down: the other cell(s) in its table row, its
+  // <label>, or the text around it.
+  function rowLabel(sel) {
+    const tr = sel.closest('tr');
+    if (tr) {
+      for (const cell of tr.children) if (!cell.contains(sel) && textOf(cell)) return textOf(cell);
+    }
+    if (sel.id) {
+      const l = document.querySelector('label[for="' + CSS.escape(sel.id) + '"]');
+      if (l && textOf(l)) return textOf(l);
+    }
+    for (let el = sel.parentElement; el && el !== document.body; el = el.parentElement) {
+      if (el.querySelectorAll('select').length > 1) break;
+      const clone = el.cloneNode(true);
+      clone.querySelectorAll('select').forEach((x) => x.remove());
+      if (textOf(clone)) return textOf(clone);
+    }
+    return '';
+  }
+
+  function selectRow(sel, letters) {
+    const opts = [...sel.options].filter((o) => o.value !== '' && !PLACEHOLDER.test(textOf(o)));
+    return {
+      label: rowLabel(sel),
+      options: opts.map((o) => letters[textOf(o)] || textOf(o)),
+      optionEls: opts,
+    };
+  }
+
   function findQuestions() {
-    const inputs = answerInputs();
-    if (!inputs.length) return [];
+    const controls = answerControls();
+    if (!controls.length) return [];
     const titles = [...document.querySelectorAll('.question_title')].filter(visible);
     const groups = new Map();
 
-    for (const input of inputs) {
+    for (const ctrl of controls) {
       let title = null;
       for (const t of titles) {
-        if (t.compareDocumentPosition(input) & Node.DOCUMENT_POSITION_FOLLOWING) title = t;
+        if (t.compareDocumentPosition(ctrl) & Node.DOCUMENT_POSITION_FOLLOWING) title = t;
       }
-      if (!title) title = precedingHeading(input);
+      if (!title) title = precedingHeading(ctrl);
       if (!title) continue;
       if (!groups.has(title)) groups.set(title, []);
-      groups.get(title).push(input);
+      groups.get(title).push(ctrl);
     }
 
     const questions = [];
-    for (const [titleEl, ins] of groups) {
-      const container = titleEl.closest('.main-question, [id^="question_div_"]');
+    for (const [titleEl, ctrls] of groups) {
+      let container = titleEl.closest('.main-question, [id^="question_div_"]');
+      if (!container) {
+        container = titleEl.parentElement;
+        while (container && container !== document.body && !container.contains(ctrls[0])) container = container.parentElement;
+      }
       const desc = container && container.querySelector('.question_description');
-      questions.push({
-        titleEl,
-        inputs: ins,
-        labels: ins.map(optionLabelEl),
-        text: questionTitleText(titleEl),
-        extraText: desc ? textOf(desc) : '',
-        options: ins.map((i) => textOf(optionLabelEl(i))),
-        multi: ins.some((i) => i.type === 'checkbox'),
-      });
+      const base = { titleEl, text: questionTitleText(titleEl), extraText: desc ? textOf(desc) : '' };
+
+      const boxes = ctrls.filter((el) => el.tagName === 'INPUT' && (el.type === 'radio' || el.type === 'checkbox'));
+      const selects = ctrls.filter((el) => el.tagName === 'SELECT');
+      const fields = ctrls.filter((el) => el.tagName === 'TEXTAREA' || (el.tagName === 'INPUT' && el.type === 'text'));
+
+      if (selects.length) {
+        const letters = letterMap(container);
+        questions.push(Object.assign(base, { kind: 'select', selects, rows: selects.map((s) => selectRow(s, letters)) }));
+      } else if (boxes.length) {
+        questions.push(
+          Object.assign(base, {
+            kind: 'choice',
+            inputs: boxes,
+            labels: boxes.map(optionLabelEl),
+            options: boxes.map((i) => textOf(optionLabelEl(i))),
+            multi: boxes.some((i) => i.type === 'checkbox'),
+          })
+        );
+      } else if (fields.length) {
+        questions.push(Object.assign(base, { kind: 'text', fields, fieldCount: fields.length }));
+      }
     }
     return questions;
   }
@@ -117,13 +187,30 @@
 
   // ------------------------------------------------------------- page actions
 
+  const fire = (el) => {
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+  };
+
   function setChecked(input, on) {
     if (input.checked === on) return;
     input.click();
     if (input.checked !== on) {
       input.checked = on;
-      input.dispatchEvent(new Event('input', { bubbles: true }));
-      input.dispatchEvent(new Event('change', { bubbles: true }));
+      fire(input);
+    }
+  }
+
+  function setText(field, text) {
+    field.value = text;
+    fire(field);
+    // Open questions use CKEditor, which keeps its own copy of the text.
+    try {
+      const page = window.wrappedJSObject || window;
+      const inst = page.CKEDITOR && page.CKEDITOR.instances && (page.CKEDITOR.instances[field.id] || page.CKEDITOR.instances[field.name]);
+      if (inst) inst.setData(text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/\n/g, '<br>'));
+    } catch (e) {
+      /* editor not reachable - the textarea itself still has the text */
     }
   }
 
@@ -133,6 +220,7 @@
   }
 
   function highlight(el, color) {
+    if (!visible(el) && el.parentElement) el = el.parentElement;
     highlighted.push({ el, style: el.getAttribute('style') || '' });
     el.style.outline = '3px solid ' + color;
     el.style.outlineOffset = '3px';
@@ -140,20 +228,75 @@
   }
 
   function applyResult(q, r) {
+    const color = COLORS[r.confidence];
+    if (q.kind === 'select') {
+      q.rows.forEach((row, i) => {
+        const pick = r.rowPicks[i];
+        if (pick == null || pick < 0) return;
+        const sel = q.selects[i];
+        const opt = row.optionEls[pick];
+        if (sel.value !== opt.value) {
+          sel.value = opt.value;
+          opt.selected = true;
+          fire(sel);
+        }
+        highlight(sel, color);
+      });
+      return;
+    }
+    if (q.kind === 'text') {
+      r.fills.forEach((text, i) => {
+        if (!q.fields[i]) return;
+        setText(q.fields[i], text);
+        highlight(q.fields[i], color);
+      });
+      return;
+    }
     if (!r.picks.length) return;
     if (q.multi) {
       q.inputs.forEach((input, i) => setChecked(input, r.picks.includes(i)));
     } else {
       setChecked(q.inputs[r.picks[0]], true);
     }
-    for (const i of r.picks) highlight(q.labels[i], COLORS[r.confidence]);
+    for (const i of r.picks) highlight(q.labels[i], color);
   }
 
+  const selectedOption = (sel) => {
+    const o = sel.options[sel.selectedIndex];
+    return o && o.value !== '' && !PLACEHOLDER.test(textOf(o)) ? o : null;
+  };
+
+  function isAnswered(q) {
+    if (q.kind === 'select') return q.selects.every(selectedOption);
+    if (q.kind === 'text') return q.fields.some((f) => f.value.trim());
+    return q.inputs.some((i) => i.checked);
+  }
+
+  // What is on the page right now (ours or the user's own choice).
   function selectedText(q) {
+    if (q.kind === 'select') {
+      return q.rows
+        .map((row, i) => {
+          const o = selectedOption(q.selects[i]);
+          const at = o ? row.optionEls.indexOf(o) : -1;
+          return row.label + ' → ' + (o ? (at >= 0 ? row.options[at] : textOf(o)) : '?');
+        })
+        .join('; ');
+    }
+    if (q.kind === 'text') return q.fields.map((f) => f.value.trim()).filter(Boolean).join(' | ');
     return q.inputs
       .map((input, i) => (input.checked ? q.options[i] : null))
       .filter(Boolean)
       .join(' + ');
+  }
+
+  // What the autopilot chose, for the panel.
+  function plannedText(q, r) {
+    if (q.kind === 'select') {
+      return r.rowPicks.length ? q.rows.map((row, i) => row.label + ' → ' + (r.rowPicks[i] >= 0 ? row.options[r.rowPicks[i]] : '?')).join('; ') : '(nothing selected)';
+    }
+    if (q.kind === 'text') return r.fills.length ? r.fills.join(' | ') : '(nothing typed)';
+    return r.picks.length ? r.picks.map((p) => q.options[p]).join(' + ') : '(nothing ticked)';
   }
 
   async function recordAnswers(questions, results, manual) {
@@ -262,9 +405,9 @@
   // "Continue" after a pause – use whatever is ticked now (yours or ours).
   async function continueManually() {
     const questions = findQuestions();
-    const missing = questions.filter((q) => !q.inputs.some((i) => i.checked));
+    const missing = questions.filter((q) => !isAnswered(q));
     if (missing.length) {
-      ui.status('Tick an answer first, then press Continue.', 'warn');
+      ui.status('Answer the question first (tick, select or type), then press Continue.', 'warn');
       return;
     }
     await recordAnswers(questions, lastResults, lastResults.some((r) => r.confidence !== 'high'));
@@ -334,8 +477,10 @@
           .modal h2 { margin: 0; padding: 14px 16px 4px; font-size: 17px; }
           .modal p { margin: 0; padding: 0 16px 10px; color: #4b5563; }
           .modal .list { overflow: auto; padding: 0 16px; border-top: 1px solid #e5e7eb; border-bottom: 1px solid #e5e7eb; }
-          table { border-collapse: collapse; width: 100%; }
-          td, th { text-align: left; vertical-align: top; padding: 6px 4px; border-bottom: 1px solid #f3f4f6; }
+          table { border-collapse: collapse; width: 100%; table-layout: fixed; }
+          td, th { text-align: left; vertical-align: top; padding: 6px 4px; border-bottom: 1px solid #f3f4f6; overflow-wrap: anywhere; }
+          th:nth-child(1) { width: 47%; } th:nth-child(2) { width: 40%; } th:nth-child(3) { width: 13%; }
+          .res .q, .res .a { overflow-wrap: anywhere; }
           th { position: sticky; top: 0; background: #fff; font-size: 12px; color: #6b7280; }
           .flag { font-size: 11px; padding: 1px 6px; border-radius: 999px; white-space: nowrap; }
           .flag.high { background: #dcfce7; color: #166534; } .flag.low { background: #fef3c7; color: #92400e; }
@@ -414,13 +559,13 @@
         qEl.textContent = q.text;
         const aEl = document.createElement('div');
         aEl.className = 'a';
-        aEl.textContent = r.picks.length ? '→ ' + r.picks.map((p) => q.options[p]).join(' + ') : '→ (nothing ticked)';
+        aEl.textContent = '→ ' + plannedText(q, r);
         div.append(qEl, aEl);
         if (r.entry) {
           const k = document.createElement('div');
           k.className = 'q';
           k.textContent =
-            'Key: "' + r.entry.q + '" → "' + r.entry.a + '" (question ' + Math.round(r.qScore * 100) + '%, answer ' + Math.round(r.aScore * 100) + '%)';
+            'Key: "' + r.entry.q + '" → "' + r.entry.a.split('\n').join(' • ') + '" (question ' + Math.round(r.qScore * 100) + '%' + (q.kind === 'text' ? '' : ', answer ' + Math.round(r.aScore * 100) + '%') + ')';
           div.append(k);
         }
         if (r.reason) {

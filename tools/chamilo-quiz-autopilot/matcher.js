@@ -104,12 +104,14 @@
     return (2 * inter) / (A.size + B.size);
   }
 
-  // "All of the above", "All listed steps", "None of the above", ...
+  // "All of the above", "All listed steps", "None of the above", "Both of the above", ...
   function genericKind(text) {
-    const n = norm(text).replace(/[^a-z ]+/g, ' ').replace(/\s+/g, ' ').trim();
+    const n = norm(text).replace(/[^a-z0-9 ]+/g, ' ').replace(/\s+/g, ' ').trim();
     if (!n || n.split(' ').length > 8) return null;
     if (/^none\b/.test(n)) return 'none';
-    if (/^both (of )?(the )?above\b/.test(n)) return 'both';
+    if (/^both (of )?(the )?(above|these|options?|statements?|answers?)\b/.test(n) || /^both [a-d1-4] (and )?[a-d1-4]$/.test(n)) {
+      return 'both';
+    }
     if (
       /^(all|every)\b/.test(n) &&
       (n === 'all' || /\b(above|these|statements?|listed|steps?|of them|correct|options?|mentioned|given|answers?)\b/.test(n))
@@ -119,12 +121,17 @@
     return null;
   }
 
+  // One key answer can span several lines (bullets, numbered list, wrapped text).
+  function answerLines(answer) {
+    return String(answer).split('\n').map(clean).filter(Boolean);
+  }
+
   // "A OR B" in an answer key means either wording is acceptable.
   function answerAlternatives(answer) {
     return String(answer).split(/\s+OR\s+/).map(clean).filter(Boolean);
   }
 
-  // "A + B + C" / "A; B" describe several separate statements.
+  // Bullets / lines, "A + B + C" and "A; B" describe several separate statements.
   function answerParts(answer) {
     return String(answer).split(/\s\+\s|;\s+|\s&\s|\s+AND\s+|\n/).map(clean).filter(Boolean);
   }
@@ -154,8 +161,8 @@
     const og = genericKind(optionText);
     if (kg) return kg === og ? 1 : 0.05;
     let best = textScore(keyAnswer, optionText);
-    const alts = answerAlternatives(keyAnswer);
-    if (alts.length > 1) {
+    const alts = new Set(answerAlternatives(keyAnswer).concat(answerLines(keyAnswer)));
+    if (alts.size > 1) {
       for (const alt of alts) best = Math.max(best, 0.95 * textScore(alt, optionText));
     }
     return best;
@@ -181,24 +188,53 @@
     return Math.min(1, s);
   }
 
+  // Question score for a key entry, also trying the page's description and,
+  // when the key copied extra lines (e.g. the options), the page's options.
+  function entryQuestionScore(entry, q, optionTexts) {
+    let qs = questionScore(entry.q, q.text);
+    if (q.extraText) qs = Math.max(qs, 0.95 * questionScore(entry.q, q.text + ' ' + q.extraText));
+    if (entry.qx) {
+      const ctx = [q.text, q.extraText || ''].concat(optionTexts || []).join(' ');
+      qs = Math.max(qs, 0.9 * questionScore(entry.q + ' ' + entry.qx, ctx));
+    }
+    return qs;
+  }
+
   // ---------------------------------------------------------------- solving
 
+  const noMatch = (reason) => ({
+    picks: [],
+    rowPicks: [],
+    fills: [],
+    confidence: 'none',
+    entry: null,
+    qScore: 0,
+    aScore: 0,
+    reason,
+    ranked: [],
+  });
+
   /**
-   * Decide which option(s) to tick for one question.
+   * Decide how to answer one question.
    *
-   * @param {object} q        { text, extraText?, options: string[], multi: boolean }
-   * @param {Array}  entries  parsed answer key [{ q, a }]
-   * @returns {{ picks:number[], confidence:'high'|'low'|'none', entry, qScore, aScore, reason, ranked }}
+   * @param {object} q  { kind: 'choice'|'select'|'text', text, extraText?,
+   *                      options: string[], multi: boolean,      (choice)
+   *                      rows: [{label, options: string[]}],     (select: matching / ordering drop-downs)
+   *                      fieldCount: number }                    (text: typed answers)
+   * @param {Array} entries  parsed answer key [{ q, a, qx? }]
+   * @returns {{ picks:number[], rowPicks:number[], fills:string[], confidence:'high'|'low'|'none',
+   *            entry, qScore, aScore, reason, ranked }}
    */
   function solve(q, entries) {
+    if (!entries || !entries.length) return noMatch('The answer key is empty.');
+    if (q.kind === 'select') return solveSelect(q, entries);
+    if (q.kind === 'text') return solveText(q, entries);
+
     const options = q.options || [];
-    const none = (reason) => ({ picks: [], confidence: 'none', entry: null, qScore: 0, aScore: 0, reason, ranked: [] });
-    if (!options.length) return none('No answer options found for this question.');
-    if (!entries || !entries.length) return none('The answer key is empty.');
+    if (!options.length) return noMatch('No answer options found for this question.');
 
     const ranked = entries.map((entry) => {
-      let qs = questionScore(entry.q, q.text);
-      if (q.extraText) qs = Math.max(qs, 0.95 * questionScore(entry.q, q.text + ' ' + q.extraText));
+      const qs = entryQuestionScore(entry, q, options);
       const scores = options.map((o) => answerScore(entry.a, o));
       let bestIdx = 0;
       for (let i = 1; i < scores.length; i++) if (scores[i] > scores[bestIdx]) bestIdx = i;
@@ -211,7 +247,7 @@
     ranked.sort((a, b) => b.combined - a.combined);
 
     const w = ranked[0];
-    const base = { entry: w.entry, qScore: w.qs, aScore: w.best, ranked: ranked.slice(0, 5) };
+    const base = { entry: w.entry, qScore: w.qs, aScore: w.best, ranked: ranked.slice(0, 5), rowPicks: [], fills: [] };
 
     if (w.qs < 0.25 && !(w.best >= 0.85 && !w.generic)) {
       return Object.assign(base, { picks: [], confidence: 'none', reason: 'No answer-key question looks like this one.' });
@@ -223,29 +259,41 @@
   function solveSingle(q, w, ranked, base) {
     const options = q.options;
     let pick = w.bestIdx;
-    let best = w.best;
+    const best = w.best;
     const reasons = [];
 
-    // Key describes several statements ("A + B + C") and no single option
-    // matches well - that is usually the "All of the above" option.
-    const allIdx = options.findIndex((o) => genericKind(o) === 'all');
+    // The key lists several statements (bullets, "A + B", "A; B"). If they
+    // match different options and there's an "All/Both of the above" option,
+    // that's the answer - unless one option contains the whole answer.
     const parts = answerParts(w.entry.a);
-    let inferredAll = false;
-    if (best < 0.55 && allIdx >= 0 && parts.length >= 2) {
-      const matched = new Set();
-      for (const part of parts) {
-        const sc = options.map((o, i) => (i === allIdx ? 0 : textScore(part, o)));
-        const bi = sc.indexOf(Math.max(...sc));
-        if (sc[bi] >= 0.4) matched.add(bi);
-      }
-      if (matched.size >= 2) {
-        pick = allIdx;
-        inferredAll = true;
-        reasons.push('Key lists several statements, so "' + clean(options[allIdx]) + '" was chosen.');
+    const allIdx = options.findIndex((o) => ['all', 'both'].includes(genericKind(o)));
+    let inferred = false;
+    let inferredSure = false;
+    if (allIdx >= 0 && parts.length >= 2 && !w.generic) {
+      const whole = Math.max(...options.map((o, i) => (i === allIdx ? 0 : textScore(w.entry.a, o))));
+      if (whole < 0.8) {
+        const thr = best < 0.7 ? 0.42 : 0.6;
+        const matched = new Set();
+        let strong = 0;
+        for (const part of parts) {
+          const sc = options.map((o, i) => (genericKind(o) ? 0 : textScore(part, o)));
+          const bi = sc.indexOf(Math.max(...sc));
+          if (sc[bi] >= thr && !matched.has(bi)) {
+            matched.add(bi);
+            if (sc[bi] >= 0.6) strong++;
+          }
+        }
+        if (matched.size >= 2) {
+          pick = allIdx;
+          inferred = true;
+          const statements = options.filter((o) => !genericKind(o)).length;
+          inferredSure = w.qs >= 0.5 && strong >= 2 && matched.size === statements;
+          reasons.push('Your key lists several statements, so "' + clean(options[allIdx]) + '" was chosen.');
+        }
       }
     }
 
-    if (best < 0.35 && !inferredAll) {
+    if (best < 0.35 && !inferred) {
       return Object.assign(base, {
         picks: [],
         confidence: 'none',
@@ -253,14 +301,16 @@
       });
     }
 
-    let confident = !inferredAll;
-    if (confident && !((w.qs >= 0.5 && best >= 0.5) || (w.qs >= 0.3 && best >= 0.8 && !w.generic))) {
-      confident = false;
-      reasons.push('Weak match.');
-    }
-    if (confident && !(best - w.second >= 0.12 || (best >= 0.95 && w.second < 0.9))) {
-      confident = false;
-      reasons.push('Two options look almost equally right.');
+    let confident = inferred ? inferredSure : true;
+    if (!inferred) {
+      if (!((w.qs >= 0.5 && best >= 0.5) || (w.qs >= 0.3 && best >= 0.8 && !w.generic))) {
+        confident = false;
+        reasons.push('Weak match.');
+      }
+      if (confident && !(best - w.second >= 0.12 || (best >= 0.95 && w.second < 0.9))) {
+        confident = false;
+        reasons.push('Two options look almost equally right.');
+      }
     }
     if (confident) {
       const rival = ranked.find((r) => r !== w && r.bestIdx !== pick && r.best >= 0.35);
@@ -269,11 +319,9 @@
         reasons.push('Another key entry ("' + clean(rival.entry.q) + '") points to a different option.');
       }
     }
-    if (confident) {
+    if (confident && !inferred) {
       // A second key entry for this same question that accepts two of the options ("A OR B").
-      const shaky = ranked.find(
-        (r) => r !== w && r.qs >= 0.4 && r.qs >= w.qs - 0.45 && r.second >= 0.5 && r.best - r.second < 0.12
-      );
+      const shaky = ranked.find((r) => r !== w && r.qs >= 0.4 && r.qs >= w.qs - 0.45 && r.second >= 0.5 && r.best - r.second < 0.12);
       if (shaky) {
         confident = false;
         reasons.push('Your key accepts more than one of these options ("' + clean(shaky.entry.a) + '").');
@@ -297,17 +345,17 @@
         if (genericKind(o) !== 'none') picks.add(i);
       });
     } else {
-      const parts = answerParts(w.entry.a);
+      // Each statement in the key ticks the one option it matches best. Wrong
+      // options often differ by a word or two, so a close runner-up means "check".
+      // "A OR B" on a multiple-answer question means both are correct.
+      const parts = answerParts(w.entry.a).reduce((acc, p) => acc.concat(answerAlternatives(p)), []);
       for (const part of parts.length > 1 ? parts : [w.entry.a]) {
-        const sc = options.map((o) => answerScore(part, o));
+        const sc = options.map((o) => textScore(part, o));
         const bi = sc.indexOf(Math.max(...sc));
+        const second = sc.reduce((m, s, i) => (i === bi || picks.has(i) ? m : Math.max(m, s)), 0);
         if (sc[bi] >= 0.45) picks.add(bi);
-        if (sc[bi] < 0.55) allGood = false;
+        if (sc[bi] < 0.55 || !(sc[bi] - second >= 0.08 || sc[bi] >= 0.97)) allGood = false;
       }
-      // Options that match the whole key answer strongly are ticked as well.
-      w.scores.forEach((s, i) => {
-        if (s >= 0.8) picks.add(i);
-      });
     }
 
     const list = [...picks].sort((a, b) => a - b);
@@ -318,8 +366,110 @@
     return Object.assign(base, {
       picks: list,
       confidence: confident ? 'high' : 'low',
-      reason: confident ? '' : 'Multiple-choice question - please double-check the ticked options.',
+      reason: confident ? '' : 'Multiple-answer question - please double-check the ticked options.',
     });
+  }
+
+  // Pairs a matching/ordering answer can describe. "1. Priority Chats" means
+  // position 1 <-> "Priority Chats"; "Apache -> web server" is an explicit pair.
+  function matchingPairs(answer) {
+    const pairs = [];
+    answerLines(answer).forEach((line, i) => {
+      const m = line.match(/^\(?(\d{1,2}|[a-z])\s*[.):]\s+(.+)$/i);
+      const pos = m ? m[1] : String(i + 1);
+      const body = m ? m[2] : line;
+      pairs.push({ left: pos, right: body }, { left: body, right: pos });
+      const sp = body.split(/\s*(?:\u2192|->|=>|\u21d2|:)\s*/).filter(Boolean);
+      if (sp.length === 2) pairs.push({ left: sp[0], right: sp[1] }, { left: sp[1], right: sp[0] });
+    });
+    return pairs;
+  }
+
+  const ORDINALS = { first: 1, second: 2, third: 3, fourth: 4, fifth: 5, sixth: 6, seventh: 7, eighth: 8, ninth: 9, tenth: 10,
+    one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10 };
+
+  // "1", "1st", "First", "Priority 1", "Position 2" -> the number; anything else -> null.
+  function positionOf(s) {
+    const n = clean(s).toLowerCase().replace(/[.):\s]+$/, '');
+    const pre = '(?:(?:priority|order|position|rank|step|level|no\\.?|number|#)\\s*)?';
+    const post = '(?:\\s*(?:priority|place|position))?';
+    let m = n.match(new RegExp('^' + pre + '(\\d{1,2})(?:st|nd|rd|th)?' + post + '$'));
+    if (m) return +m[1];
+    m = n.match(new RegExp('^' + pre + '([a-z]+)' + post + '$'));
+    return m && ORDINALS[m[1]] ? ORDINALS[m[1]] : null;
+  }
+
+  // Positions and single letters must match exactly; text is compared fuzzily.
+  function sideScore(a, b) {
+    const pa = positionOf(a);
+    const pb = positionOf(b);
+    if (pa != null || pb != null) return pa === pb ? 1 : 0;
+    const sa = clean(a).replace(/[.):\s]+$/, '');
+    const sb = clean(b).replace(/[.):\s]+$/, '');
+    if (/^[a-z]$/i.test(sa) || /^[a-z]$/i.test(sb)) return sa.toLowerCase() === sb.toLowerCase() ? 1 : 0;
+    return textScore(sa, sb);
+  }
+
+  // Matching / ordering questions: one drop-down per row.
+  function solveSelect(q, entries) {
+    const rows = q.rows || [];
+    if (!rows.length) return noMatch('No drop-downs found for this question.');
+    const allOptions = rows.reduce((acc, r) => acc.concat(r.options), []);
+    const rowLabels = rows.map((r) => r.label);
+
+    const ranked = entries.map((entry) => {
+      const qs = entryQuestionScore(entry, q, rowLabels.concat(allOptions));
+      const pairs = matchingPairs(entry.a);
+      const rowRes = rows.map((row) => {
+        const sc = row.options.map((opt) => pairs.reduce((m, p) => Math.max(m, Math.min(sideScore(p.left, row.label), sideScore(p.right, opt))), 0));
+        let pick = 0;
+        for (let i = 1; i < sc.length; i++) if (sc[i] > sc[pick]) pick = i;
+        const second = sc.reduce((m, s, i) => (i === pick ? m : Math.max(m, s)), 0);
+        return { pick, score: sc.length ? sc[pick] : 0, second };
+      });
+      const avg = rowRes.reduce((s, r) => s + r.score, 0) / rowRes.length;
+      return { entry, qs, rowRes, avg, combined: 0.65 * qs + 0.35 * avg };
+    });
+    ranked.sort((a, b) => b.combined - a.combined);
+    const w = ranked[0];
+    const base = { entry: w.entry, qScore: w.qs, aScore: w.avg, ranked: ranked.slice(0, 5), picks: [], fills: [] };
+
+    if (w.qs < 0.3 || w.avg < 0.3) {
+      return Object.assign(base, {
+        rowPicks: [],
+        confidence: 'none',
+        reason: w.qs < 0.3 ? 'No answer-key question looks like this one.' : 'Could not work out the drop-down choices from your key.',
+      });
+    }
+    const confident = w.qs >= 0.5 && w.rowRes.every((r) => r.score >= 0.75 && r.score - r.second >= 0.15);
+    return Object.assign(base, {
+      rowPicks: w.rowRes.map((r) => (r.score >= 0.4 ? r.pick : -1)),
+      confidence: confident ? 'high' : 'low',
+      reason: confident ? '' : 'Drop-down question - please check the selections.',
+    });
+  }
+
+  // Typed answers (fill in the blanks / open question): fill in, always ask to check.
+  function solveText(q, entries) {
+    const ranked = entries
+      .map((entry) => ({ entry, qs: entryQuestionScore(entry, q, []) }))
+      .sort((a, b) => b.qs - a.qs);
+    const w = ranked[0];
+    if (w.qs < 0.45) return noMatch('No answer-key question looks like this one.');
+    const lines = answerLines(w.entry.a);
+    const n = Math.max(1, q.fieldCount || 1);
+    const fills = n > 1 && lines.length >= n ? lines.slice(0, n) : [lines.join('\n')];
+    return {
+      picks: [],
+      rowPicks: [],
+      fills,
+      confidence: 'low',
+      entry: w.entry,
+      qScore: w.qs,
+      aScore: 0,
+      ranked: ranked.slice(0, 5),
+      reason: 'Typed answer filled in from your key - please check it.',
+    };
   }
 
   // ---------------------------------------------------------------- key parsing
@@ -350,29 +500,73 @@
   }
 
   const SEPARATORS = [' => ', ' ==> ', ' -> ', ' :: ', '\t'];
+  // Check marks / arrows people put in front of answers: (check marks, arrows, pointing-hand emoji)
+  const MARKS = /^(?:[\u2705\u2714\u2611\u2713\u2192\u27a1\u2b50\u{1F449}\u{1F7E2}]\ufe0f?\s*)+/u;
+  const TRAILING_MARK = /\s*(?:[\u2705\u2714\u2611\u2713]\ufe0f?|\((?:correct|right|answer)\))\s*$/iu;
+  const BULLET = /^[-*+\u2022\u00b7\u25cf\u25aa\u25e6]\s+/;
+  const NUM = /^\(?(\d{1,3})\s*[.):]\s+(.+)$/; // "12. text", "12) text", "(12) text"
+  const LETTER = /^\(?([a-h])\s*[.)]\s+(.+)$/i; // "a) option", "B. option"
+  const QMARK = /^(?:q|ques|question)\s*(\d{1,3})?\s*[:.)\-]\s*(.+)$/i; // "Q: ..", "Q12. ..", "Question 12: .."
+  const AMARK = /^(?:(?:ans(?:wer)?s?|correct(?:\s+(?:answer|option|choice))?|right\s+answer|solution)\s*[:=\-\u2013\u2014]|a\s*[:=])\s*(.*)$/i;
+  const QUESTION_WORD = /^(what|which|how|why|when|where|who|whom|select|choose|match|according|if|you|is|are|do|does|can|should|in|for)\b/i;
 
   /**
-   * Parse a pasted answer key. Supported formats (can be mixed):
-   *   | 1 | Question | Answer |          (markdown table, # column optional)
-   *   Question | Answer
-   *   Question => Answer   (also ->, ::, or a TAB)
-   *   Q: Question  /  A: Answer          (on separate lines)
-   *   **1. Question**  /  **Answer:** x  (numbered question, "Answer:" line; bold is ignored)
-   *   Question?  /  Answer               (question line ending in "?", answer on the next line)
+   * Parse a pasted answer key. Works with any mix of:
+   *   1. Question                        numbered (or "Q:", "Question 3:") question,
+   *   Answer: text                       then "Answer:" / "Ans:" / "A:" / "Correct answer:" (bold, check-mark ignored)
+   *   Answer:                            the answer may start on the next line and span several lines,
+   *   * bullet  /  1. numbered item      bullets or a numbered list (kept as separate answer lines)
+   *   | 1 | Question | Answer |          markdown table (# column optional)
+   *   Question | Answer                  or  Question => Answer  (->, ::, TAB)
+   *   Question?  /  Answer               a line ending in "?" and its answer on the next line
+   *   1. Question / - option / - check-mark option   options with the right one marked check-mark or "(correct)"
    *   JSON: [{"q": "...", "a": "..."}]  or  {"question": "answer"}
+   * Headings, intro text and "answers to memorize" lists without questions are ignored.
    */
   function parseKey(text) {
     const entries = [];
     const seen = new Set();
-    const push = (q, a) => {
-      q = clean(q).replace(/^(?:q(?:uestion)?\s*\d*\s*[:.)]|\d+\s*[.)])\s*/i, '');
-      a = clean(a).replace(/^(?:a(?:ns(?:wer)?)?\s*[:=]\s*)/i, '');
-      if (!q || !a) return;
-      const id = norm(q) + '\u0000' + norm(a);
+
+    const cleanAnswerLine = (l) => clean(String(l).replace(MARKS, '').replace(BULLET, '')).replace(MARKS, '').replace(TRAILING_MARK, '').trim();
+
+    const push = (q, a, qx) => {
+      q = clean(q).replace(/^(?:q(?:ues(?:tion)?)?\s*\d*\s*[:.)]|\d+\s*[.)])\s*/i, '');
+      let lines = (Array.isArray(a) ? a : [a]).map(cleanAnswerLine).filter(Boolean);
+      // Drop lead-ins such as "Select ALL:" that only introduce a list.
+      if (lines.length > 1) lines = lines.filter((l, i) => !(i < lines.length - 1 && /:$/.test(l) && l.split(/\s+/).length <= 6));
+      if (!q || !lines.length) return;
+      const ans = lines.join('\n');
+      const id = norm(q) + '\u0000' + norm(ans);
       if (seen.has(id)) return;
       seen.add(id);
-      entries.push({ q, a });
+      const entry = { q, a: ans };
+      const extra = clean((qx || []).join(' '));
+      if (extra) entry.qx = extra;
+      entries.push(entry);
     };
+
+    const isHeader = (p) =>
+      /^(#|no\.?|question)$/i.test(p[0]) || (/question/i.test(p[0]) && p[0].length < 20 && /answer/i.test(p[1]));
+    const isRule = (c) => /^:?-{2,}:?$/.test(c);
+
+    // "question | answer" or "question => answer" on one line; null if the line is not a pair.
+    const pairOf = (s, allowPipes) => {
+      if (allowPipes && s.includes('|')) {
+        let cells = splitCells(s, true).map(clean).filter((c) => c !== '');
+        if (cells.length > 2 && /^#?\d+[.)]?$/.test(cells[0])) cells = cells.slice(1); // "# / 1" column
+        if (cells.length >= 2) return cells;
+      }
+      const sep = SEPARATORS.find((x) => s.includes(x));
+      if (sep) {
+        const i = s.indexOf(sep);
+        return [s.slice(0, i), s.slice(i + sep.length)];
+      }
+      return null;
+    };
+
+    // Section titles such as "Additional Questions You Shared Later".
+    const isHeadingLike = (s) =>
+      !/[.?!;,]$/.test(s) && s.split(/\s+/).length <= 10 && /\b(questions?|answers?|quiz|section|additional|bonus|memori[sz]e)\b/i.test(s);
 
     const t = String(text || '').replace(/\r\n?/g, '\n').trim();
     if (!t) return entries;
@@ -391,85 +585,166 @@
       }
     }
 
-    const Q_RE = /^(?:(?:q|question)\s*\d*\s*[:.)]|\d+\s*[.)])\s*(.+)$/i; // "Q: ..", "Question 3: ..", "3. .."
-    const A_RE = /^(?:a|ans|answer|correct answer|right answer|correct)\s*[:=]\s*(.*)$/i;
-    const isHeader = (p) =>
-      /^(#|no\.?|question)$/i.test(p[0]) || (/question/i.test(p[0]) && p[0].length < 20 && /answer/i.test(p[1]));
+    const lines = t.split('\n').map((l) => l.trim());
+    const plainOf = (l) => l.replace(/\*\*|__/g, '').trim();
 
-    // "question | answer" or "question => answer" on one line; null if the line is not a pair.
-    const pairOf = (s) => {
-      if (s.includes('|')) {
-        let cells = splitCells(s, true).map(clean).filter((c) => c !== '');
-        if (cells.length > 2 && /^#?\d+[.)]?$/.test(cells[0])) cells = cells.slice(1); // "# / 1" column
-        if (cells.length >= 2) return cells;
+    // Is there an "Answer:" line before the next question starts?
+    const answerMarkerAhead = (from) => {
+      for (let j = from + 1; j < lines.length && j < from + 25; j++) {
+        const p = plainOf(lines[j]);
+        if (!p) continue;
+        if (AMARK.test(p)) return true;
+        if (NUM.test(p) || QMARK.test(p) || /^#{1,6}\s/.test(p) || p.startsWith('|')) return false;
       }
-      const sep = SEPARATORS.find((x) => s.includes(x));
-      if (sep) {
-        const i = s.indexOf(sep);
-        return [s.slice(0, i), s.slice(i + sep.length)];
+      return false;
+    };
+
+    let cur = null; // { q, qx:[], a:[], num, loose, answering, lastItem, optItem }
+    const finish = () => {
+      if (cur && cur.a.length) push(cur.q, cur.a, cur.qx);
+      cur = null;
+    };
+    const startQ = (qText, num, loose) => {
+      finish();
+      // Inline answer: "Which port? Answer: 22"
+      const ia = qText.match(/^(.*?\S)\s+(?:answer|ans)\s*[:=]\s*(.+)$/i);
+      if (ia) return push(ia[1], [ia[2]]);
+      const pair = pairOf(qText, false);
+      if (pair) return push(pair[0], [pair[1]]);
+      cur = { q: qText, qx: [], a: [], num, loose, answering: false, lastItem: null, optItem: null };
+    };
+    const addAnswer = (s) => {
+      const m = s.match(NUM);
+      cur.lastItem = m ? +m[1] : cur.lastItem;
+      cur.a.push(s);
+    };
+    // Inside an answer, is "n. text" the next item of the answer's own list?
+    const isListItem = (n, body) => {
+      if (cur.lastItem != null && n === cur.lastItem + 1) {
+        return !(cur.num != null && n === cur.num + 1 && (/\?$/.test(body) || QUESTION_WORD.test(body)));
       }
-      return null;
+      const last = cur.a[cur.a.length - 1];
+      return cur.lastItem == null && n === 1 && (!cur.a.length || /:$/.test(last));
     };
 
-    let pendingQ = null;
-    let loose = false; // pending question may take a plain next line as its answer
-    let wantAnswer = false; // saw a bare "Answer:" - the text is on the next line
-    const setQ = (q, isLoose) => {
-      pendingQ = q;
-      loose = isLoose;
-      wantAnswer = false;
-    };
-    const take = (a) => {
-      push(pendingQ, a);
-      setQ(null, false);
-    };
-
-    for (const raw of t.split('\n')) {
-      const line = raw.trim();
-      if (!line || /^```/.test(line) || /^#{1,6}\s/.test(line) || /^([-*_])\1{2,}$/.test(line)) continue;
-      const plain = line.replace(/\*\*|__/g, '').trim(); // "**Answer:** x" -> "Answer: x"
-      let m;
-
-      if (pendingQ && wantAnswer) {
-        take(plain);
+    for (let li = 0; li < lines.length; li++) {
+      const line = lines[li];
+      if (!line || /^```/.test(line)) continue;
+      if (/^([-*_])\1{2,}$/.test(line)) {
+        finish();
         continue;
       }
-      if (pendingQ && (m = plain.match(A_RE))) {
-        if (m[1].trim()) take(m[1]);
-        else wantAnswer = true;
+      const plain = plainOf(line);
+      if (!plain) continue;
+      let m;
+
+      if (/^#{1,6}\s/.test(plain)) {
+        finish();
         continue;
       }
 
       if (line.startsWith('|')) {
-        const pair = pairOf(line);
-        if (pair && !isHeader(pair) && !pair.every((c) => /^:?-{2,}:?$/.test(c))) push(pair[0], pair[1]);
-        setQ(null, false);
+        finish();
+        const pair = pairOf(line, true);
+        if (pair && !isHeader(pair) && !pair.every(isRule)) push(pair[0], [pair[1]]);
         continue;
       }
 
-      if ((m = plain.match(Q_RE))) {
-        const pair = pairOf(m[1]);
-        if (pair && !isHeader(pair)) {
-          push(pair[0], pair[1]);
-          setQ(null, false);
-        } else {
-          setQ(m[1], false);
+      if (cur && (m = plain.match(AMARK))) {
+        cur.answering = true;
+        const rest = m[1].replace(MARKS, '').trim();
+        if (rest) addAnswer(rest);
+        continue;
+      }
+
+      if ((m = plain.match(QMARK))) {
+        startQ(m[2], m[1] ? +m[1] : null, false);
+        continue;
+      }
+
+      if ((m = plain.match(NUM))) {
+        const n = +m[1];
+        if (cur && cur.answering && isListItem(n, m[2])) {
+          addAnswer(plain);
+          continue;
         }
+        if (cur && !cur.answering) {
+          const isOption = cur.num != null ? n <= cur.num : n === 1 ? cur.optItem == null : n === cur.optItem + 1;
+          if (isOption) {
+            // A numbered option list under the question; "check-mark" marks the answer.
+            cur.optItem = n;
+            if (MARKS.test(m[2]) || TRAILING_MARK.test(m[2])) cur.a.push(m[2]);
+            else cur.qx.push(m[2]);
+            continue;
+          }
+        }
+        startQ(m[2], n, false);
         continue;
       }
 
-      const pair = pairOf(line);
+      if (cur && !cur.answering && (m = plain.match(LETTER))) {
+        // A lettered option under the question; a check mark or "(correct)" marks the answer.
+        if (MARKS.test(m[2]) || TRAILING_MARK.test(m[2])) cur.a.push(m[2]);
+        else cur.qx.push(m[2]);
+        continue;
+      }
+
+      if (BULLET.test(plain)) {
+        const body = plain.replace(BULLET, '');
+        if (cur && cur.answering) addAnswer(body);
+        else if (cur && (MARKS.test(body) || TRAILING_MARK.test(body))) cur.a.push(body); // "- \u2705 option"
+        else if (cur) cur.qx.push(body);
+        continue;
+      }
+
+      const pair = !(cur && cur.answering) || /\?\s*$/.test((pairOf(line, true) || [''])[0]) ? pairOf(line, true) : null;
       if (pair) {
-        if (!isHeader(pair)) push(pair[0], pair[1]);
-        setQ(null, false);
+        finish();
+        if (!isHeader(pair) && !pair.every(isRule)) push(pair[0], [pair[1]]);
         continue;
       }
-      if (/\?$/.test(plain)) {
-        setQ(plain, true);
+
+      if (cur && cur.answering) {
+        if (cur.a.length && (isHeadingLike(plain) || (/\?$/.test(plain) && !answerMarkerAhead(li)))) {
+          finish();
+          if (/\?$/.test(plain)) startQ(plain, null, true);
+          continue;
+        }
+        if (cur.loose && cur.a.length) {
+          finish();
+          continue;
+        }
+        addAnswer(plain);
         continue;
       }
-      if (pendingQ && loose) take(plain);
+
+      if (cur) {
+        if (cur.a.length && !answerMarkerAhead(li)) {
+          // Options with a check-mark answer already seen; this is a new question.
+          if (/\?$/.test(plain)) startQ(plain, null, true);
+          else finish();
+          continue;
+        }
+        if (answerMarkerAhead(li)) {
+          cur.qx.push(plain); // question wraps onto more lines / lists its options
+          continue;
+        }
+        if (/\?$/.test(plain) && cur.loose) {
+          startQ(plain, null, true);
+          continue;
+        }
+        // No "Answer:" marker coming: this line is the answer.
+        cur.answering = true;
+        addAnswer(plain);
+        if (cur.loose) finish();
+        continue;
+      }
+
+      if (/\?$/.test(plain)) startQ(plain, null, true);
+      else if (answerMarkerAhead(li) && !isHeadingLike(plain)) startQ(plain, null, false);
+      // Anything else outside a question (intro text, headings) is ignored.
     }
+    finish();
     return entries;
   }
 
@@ -478,6 +753,7 @@
     norm,
     tokens,
     genericKind,
+    answerLines,
     answerScore,
     questionScore,
     parseKey,
