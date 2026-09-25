@@ -38,11 +38,12 @@ Everything you paste is kept in the add-on's own storage, so you don't paste it 
 
 - **Adding more later:** paste new questions and answers into the popup at any time. New questions are **added**. A question that is already saved gets its answer **updated** if the new answer differs. Everything else is left alone. The popup reports e.g. *"3 added, 1 updated, 30 already saved"* and has an **Undo** link.
 - **Question bank page** (popup → **Open bank**, or `about:addons` → Quiz Autopilot → Preferences) lets you:
-  - search, **edit** or **delete** saved questions
+  - search and **edit** saved questions (to fix a wrong entry, edit its answer)
   - **add** a question by hand
   - **import** text or a backup file
   - **export a backup** (`.json`)
   - **undo the last change**
+- There is **no delete button**, so a shared copy can't wipe questions from the cloud. **Undo last change** can still take back a paste you just made on the same computer.
 - **Also save answers I pick myself** (popup checkbox, off by default): when the autopilot pauses and you choose the answer yourself, that question and your answer are saved too, so next time it is answered automatically. Only switch this on when you're sure of your picks.
 
 ### Keeping the saved questions when Firefox restarts
@@ -53,13 +54,34 @@ A **temporarily loaded** add-on (about:debugging) is removed when Firefox closes
 - Or **export a backup** before closing Firefox, then use **Import…** on the question bank page after loading the add-on again.
 - Or **install the add-on permanently** (see *To keep it installed* above). A permanently installed add-on keeps its data across restarts.
 
+## Password lock (optional)
+
+With a password set, the popup and the question bank page show only a password box, and the autopilot does nothing on quiz pages until it is unlocked.
+
+- Unlocking lasts until Firefox closes. **Lock** (in the popup and on the bank page) locks it again straight away.
+- After 5 wrong tries it makes you wait 30 seconds, and longer after more wrong tries.
+
+To set it, make a hash of your password and put it in `config.js`:
+
+```sh
+node tools/chamilo-quiz-autopilot/scripts/make-password.js "your password"
+```
+
+```js
+passwordHash: 'pbkdf2-sha256$200000$…',   // the line the script printed
+```
+
+Only this salted hash is stored, never the password itself. Leave `passwordHash` empty for no lock.
+
+This keeps casual users out. It is not strong protection: someone who unzips the add-on can edit its files and remove the lock. Also read the access key in `config.js` as a second password. If it's the same as the lock password, anyone who opens `config.js` can read it, so use a different one.
+
 ## Cloud sync with Vercel (same questions on every computer)
 
 The `server/` folder is a small Vercel project that stores the question bank in **Upstash Redis** (Vercel's one-click Redis database, free plan). Once it's connected:
 
 - Every question you add, edit or delete is uploaded straight away. If the server can't be reached, the change waits and is uploaded on the next sync.
 - On every quiz question the add-on first downloads the latest questions (waiting at most 4 seconds), then answers from the full cloud bank. If the server is offline it answers from the last downloaded copy.
-- A computer that has never seen your questions gets all of them the first time it connects.
+- A computer that has never seen your questions gets all of them the first time it connects. If that first download fails (e.g. a network blip), the quiz page says so and tries again every 5 seconds (up to 5 times) instead of stopping.
 - If two computers change the same question, the newer answer wins.
 
 ### 1. Deploy the server (once)
@@ -177,11 +199,12 @@ Otherwise it pauses. The panel shows which key entry it used and the match score
 | `matcher.js` | Answer-key parser and fuzzy matching. Pure functions, shared by the page script, the popup and the tests. |
 | `bank.js` | The question bank: merging new questions and answers, backup export/import, undo, and tracking changes to upload. |
 | `background.js` | Cloud sync: uploads local changes and downloads the cloud bank (Vercel server). |
-| `config.js` | Optional built-in server address and access key, so a copy of the add-on connects on its own. |
+| `config.js` | Optional built-in server address and access key (so a copy connects on its own) and password lock hash. |
+| `lock.js` | The optional password lock. `scripts/make-password.js` makes the hash for `config.js`. |
 | `server/` | The Vercel project: `api/questions` (the shared bank), `api/health` (setup check), and a status page. Tests: `cd server && npm test`. |
 | `bank/` | The question bank page (search, edit, delete, add, import, export). |
 | `content.js` | Reads the quiz page, ticks answers, clicks Next, shows the panel and the End-test confirmation. |
 | `popup/` | Toolbar popup: add questions to the bank, start or stop, settings. |
-| `test/` | Unit tests: `node --test tools/chamilo-quiz-autopilot/test/matcher.test.js tools/chamilo-quiz-autopilot/test/bank.test.js` |
+| `test/` | Unit tests: `node --test tools/chamilo-quiz-autopilot/test/matcher.test.js tools/chamilo-quiz-autopilot/test/bank.test.js tools/chamilo-quiz-autopilot/test/lock.test.js` |
 
 The question bank is stored in the extension's local storage (`browser.storage.local`). It only leaves your browser if you turn on cloud sync, which sends it to **your own** Vercel server and nowhere else, or if you export a backup file yourself.

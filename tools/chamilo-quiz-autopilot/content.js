@@ -20,6 +20,19 @@
 
   let timer = null;
   let busy = false;
+  let cloudRetries = 0; // tries left when the first cloud download failed
+
+  // Password lock (config.js): while locked, the autopilot does nothing on quiz pages.
+  const lockOn = !!String((globalThis.QUIZ_AUTOPILOT_CONFIG || {}).passwordHash || '').trim();
+  async function isLocked() {
+    if (!lockOn) return false;
+    try {
+      const r = await api.runtime.sendMessage({ type: 'lockState' });
+      return !(r && r.locked === false);
+    } catch (e) {
+      return true;
+    }
+  }
   let lastResults = [];
   let highlighted = [];
 
@@ -473,6 +486,7 @@
 
   async function run(mode) {
     if (busy) return;
+    if (await isLocked()) return;
     busy = true;
     try {
       await step(mode);
@@ -506,10 +520,25 @@
     }
     const entries = await B.load(api);
     if (!entries.length) {
+      // Nothing saved here yet because the cloud download failed (new computer,
+      // network blip): keep the autopilot on and try again instead of giving up.
+      const { syncStatus } = await api.storage.local.get({ syncStatus: null });
+      if (syncStatus && syncStatus.state === 'error') {
+        if (auto && cloudRetries < 5) {
+          cloudRetries++;
+          ui.status('Could not download your questions from the cloud (' + syncStatus.message + '). Trying again in 5 seconds…', 'warn');
+          schedule(() => run('auto'), 5000);
+          return;
+        }
+        ui.status('Could not download your questions from the cloud: ' + syncStatus.message + ' Check your internet connection, then press Start autopilot again.', 'error');
+        if (st.running) await save({ running: false });
+        return;
+      }
       ui.status('Your question bank is empty. Open the Quiz Autopilot toolbar popup and paste your questions and answers first.', 'error');
       if (st.running) await save({ running: false });
       return;
     }
+    cloudRetries = 0;
 
     // Loop guard: stop if "Next" doesn't move us off this question.
     const sig = questions.map((q) => M.norm(q.text)).join('\n');
@@ -836,6 +865,7 @@
   });
 
   (async () => {
+    if (await isLocked()) return; // no panel, no answering until unlocked in the popup
     const st = await load();
     const hasQuiz = findQuestions().length > 0;
     if (st.running || hasQuiz) {
