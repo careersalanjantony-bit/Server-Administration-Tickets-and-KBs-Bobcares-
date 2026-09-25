@@ -134,7 +134,7 @@ It writes to a live roster, so:
 node --test
 ```
 
-37 tests. They load the real `background.js` and `content/s4page.js` into a VM
+41 tests. They load the real `background.js` and `content/s4page.js` into a VM
 with a stand-in `browser` API and a form shaped like S4's, and cover the things
 that would actually corrupt a roster: that duration fields are never mistaken
 for the clock fields, that midnight and noon do not post as hour zero, that a
@@ -144,6 +144,15 @@ written comes from the plan's dates rather than the page, and that both of S4's
 page layouts produce byte-identical POST bodies, that a loaded plan is still
 there on the next read, and that the extension's own page is never mistaken
 for S4.
+
+They load only what `manifest.json` declares, in the order it declares it.
+Handing a context a global it was never actually given is how a missing
+dependency hides: `background.js` called into `S4Mapping` while the manifest
+loaded only `background.js`, and the tests passed because the harness injected
+it by hand. Four of them now check the wiring itself — that the background page
+loads what it calls into, that every file the manifest names exists, that
+`ui.html`'s scripts and stylesheets resolve, and that `build.sh` packages the
+lot.
 
 The real October plan — 534 blocks, 868 tech-days — runs through the harness
 with all 15 shift times, all 28 staff and all 12 fields mapped, and nothing

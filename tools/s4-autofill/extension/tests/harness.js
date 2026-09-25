@@ -13,6 +13,23 @@ const path = require("path");
 const vm = require("vm");
 
 const ROOT = path.join(__dirname, "..");
+const MANIFEST = JSON.parse(fs.readFileSync(path.join(ROOT, "manifest.json"), "utf8"));
+
+/**
+ * Load exactly the files the manifest declares, in the order it declares them.
+ *
+ * Handing a context a global it has not actually been given is how a missing
+ * dependency hides: background.js used S4Mapping for weeks while the manifest
+ * only loaded background.js, and these tests passed because the harness
+ * injected it by hand.
+ */
+function loadDeclared(context, scripts) {
+  scripts.forEach((relative) => {
+    vm.runInContext(fs.readFileSync(path.join(ROOT, relative), "utf8"), context, {
+      filename: relative,
+    });
+  });
+}
 
 const SLOT_LABELS = [
   "06:58am-02:58pm", "7:00am-3:00pm", "07:02am-03:02pm", "07:30am-03:30pm",
@@ -167,7 +184,6 @@ function load(options = {}) {
 
   const bus = makeBrowser(options.tabs);
   const posted = [];
-  const mappingSource = fs.readFileSync(path.join(ROOT, "content", "mapping.js"), "utf8");
 
   const contentContext = {
     console,
@@ -193,24 +209,19 @@ function load(options = {}) {
   };
   contentContext.globalThis = contentContext;
   vm.createContext(contentContext);
-  vm.runInContext(mappingSource, contentContext);
-  vm.runInContext(fs.readFileSync(path.join(ROOT, "content", "s4page.js"), "utf8"), contentContext);
+  loadDeclared(contentContext, MANIFEST.content_scripts[0].js);
 
   const backgroundContext = {
     console,
     browser: bus.api("background"),
     setTimeout,
-    S4Mapping: contentContext.S4Mapping,
     Date,
     JSON,
     Promise,
   };
   backgroundContext.globalThis = backgroundContext;
   vm.createContext(backgroundContext);
-  vm.runInContext(
-    fs.readFileSync(path.join(ROOT, "background.js"), "utf8"),
-    backgroundContext
-  );
+  loadDeclared(backgroundContext, MANIFEST.background.scripts);
 
   return {
     posted,
@@ -223,6 +234,7 @@ function load(options = {}) {
       return reply === undefined ? undefined : JSON.parse(JSON.stringify(reply));
     },
     S4Mapping: contentContext.S4Mapping,
+    backgroundGlobals: backgroundContext,
   };
 }
 

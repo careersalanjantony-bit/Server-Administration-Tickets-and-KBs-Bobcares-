@@ -402,3 +402,62 @@ test("the UI tab is never mistaken for the S4 page", async () => {
   assert.ok(!state.error, state.error);
   assert.strictEqual(state.mapping.tabId, 1, "should settle on the S4 tab");
 });
+
+// ------------------------------------------------------- wiring the manifest
+// background.js called into S4Mapping while the manifest only loaded
+// background.js, so the background page threw "S4Mapping is not defined" the
+// moment anyone pressed Find the shift form. These check the wiring itself.
+
+const fs = require("node:fs");
+const path = require("node:path");
+
+const EXT = path.join(__dirname, "..");
+const manifest = JSON.parse(fs.readFileSync(path.join(EXT, "manifest.json"), "utf8"));
+
+test("the background page loads the mapping helper it calls into", async () => {
+  const harness = load({ techIds: TECHS });
+  assert.ok(
+    harness.backgroundGlobals.S4Mapping,
+    "S4Mapping must exist in the background context, not just the content one"
+  );
+  assert.strictEqual(typeof harness.backgroundGlobals.S4Mapping.buildBody, "function");
+});
+
+test("every file the manifest names exists", () => {
+  const named = [
+    ...manifest.background.scripts,
+    ...manifest.content_scripts.flatMap((entry) => entry.js),
+    manifest.browser_action.default_icon,
+    ...Object.values(manifest.icons || {}),
+  ];
+  named.forEach((relative) => {
+    assert.ok(fs.existsSync(path.join(EXT, relative)), `manifest names a missing file: ${relative}`);
+  });
+});
+
+test("the UI page loads every script it needs and they all exist", () => {
+  const html = fs.readFileSync(path.join(EXT, "ui", "ui.html"), "utf8");
+  const srcs = [...html.matchAll(/<script[^>]+src="([^"]+)"/g)].map((m) => m[1]);
+  assert.ok(srcs.some((s) => s.endsWith("mapping.js")), "the UI calls S4Mapping too");
+  srcs.forEach((src) => {
+    assert.ok(
+      fs.existsSync(path.join(EXT, "ui", src)),
+      `ui.html references a missing script: ${src}`
+    );
+  });
+  const hrefs = [...html.matchAll(/<link[^>]+href="([^"]+)"/g)].map((m) => m[1]);
+  hrefs.forEach((href) => {
+    assert.ok(
+      fs.existsSync(path.join(EXT, "ui", href)),
+      `ui.html references a missing stylesheet: ${href}`
+    );
+  });
+});
+
+test("the packaged xpi would carry every file the manifest names", () => {
+  const build = fs.readFileSync(path.join(EXT, "build.sh"), "utf8");
+  const packaged = ["manifest.json", "background.js", "content", "ui", "icons"];
+  packaged.forEach((entry) => {
+    assert.ok(build.includes(entry), `build.sh does not package ${entry}`);
+  });
+});
