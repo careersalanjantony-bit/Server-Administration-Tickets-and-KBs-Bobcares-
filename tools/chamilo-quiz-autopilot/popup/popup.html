@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Quiz Autopilot</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <header>
+      <h1>Quiz Autopilot</h1>
+      <span id="state" class="badge">Idle</span>
+    </header>
+
+    <div class="bankbar">
+      <div>
+        <div><b id="bankCount">0</b> questions in your question bank</div>
+        <div id="cloud" class="cloud">Cloud sync: off</div>
+      </div>
+      <div class="bankbtns">
+        <button id="syncBtn" hidden>Sync now</button>
+        <button id="openBank">Open bank</button>
+      </div>
+    </div>
+    <p id="tempWarn" class="note warn" hidden></p>
+
+    <label for="key" class="label">Add or update questions <span class="hint">(saved automatically)</span></label>
+    <textarea id="key" spellcheck="false" aria-describedby="keyHelp" placeholder="Which plan provides assistance with AnyDesk?
+Dedicated Engineer Session or PLSM
+
+How many websites can be monitored in LSM plan
+3"></textarea>
+    <p id="keyHelp" class="helpbox">
+      Paste the <b>full question</b>, followed by its <b>correct answer only</b> (not the other options). Put the answer on the
+      next line, or after <b>Answer:</b>, and leave a blank line between questions. Lists (bullets or 1., 2., 3.) work for
+      multi-part and ordering answers. Numbered lists, tables and <b>Q:</b>/<b>A:</b> also work. A question you already have gets
+      its answer updated.
+    </p>
+
+    <div class="row">
+      <button id="save" class="primary">Save to bank</button>
+      <button id="clearBox">Clear box</button>
+      <span id="parsed" class="muted"></span>
+    </div>
+    <details id="previewBox">
+      <summary>Show questions recognised in the box</summary>
+      <ol id="preview"></ol>
+    </details>
+
+    <div class="row">
+      <label for="delay">Wait before clicking Next</label>
+      <input id="delay" type="number" min="300" max="10000" step="100" /> <span class="muted">ms</span>
+    </div>
+    <label class="check"
+      ><input type="checkbox" id="learn" /> Also save answers I pick myself when the autopilot pauses</label
+    >
+
+    <div class="row buttons">
+      <button id="start" class="primary">Start autopilot</button>
+      <button id="stop" class="danger" hidden>Stop</button>
+      <button id="once">Answer this page only</button>
+    </div>
+    <p id="msg" class="msg" role="status"><span id="msgText"></span> <button id="undo" class="link" hidden>Undo</button></p>
+    <p class="muted small">
+      Open the quiz question page first. The autopilot answers from your question bank and presses <b>Next question</b>. It
+      pauses on questions it isn't sure about, and it always asks you before pressing <b>End test</b>.
+    </p>
+
+    <script src="../matcher.js"></script>
+    <script src="../bank.js"></script>
+    <script src="popup.js"></script>
+  </body>
+</html>

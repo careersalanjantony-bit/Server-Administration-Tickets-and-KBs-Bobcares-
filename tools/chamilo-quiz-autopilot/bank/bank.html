@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Question bank - Quiz Autopilot</title>
+    <link rel="stylesheet" href="bank.css" />
+  </head>
+  <body>
+    <main>
+      <header class="top">
+        <div>
+          <h1>Question bank</h1>
+          <p class="sub"><span id="count">0</span> saved questions. The autopilot answers from these.</p>
+        </div>
+        <input id="search" type="search" placeholder="Search questions and answers" aria-label="Search questions and answers" />
+      </header>
+
+      <p id="tempWarn" class="banner" hidden></p>
+
+      <section id="syncPanel" class="panel sync" aria-labelledby="syncTitle">
+        <div class="sync-head">
+          <h2 id="syncTitle">Cloud sync</h2>
+          <span id="syncState" class="pill">Off</span>
+          <span class="spacer"></span>
+          <button id="syncNow" hidden>Sync now</button>
+        </div>
+        <p id="syncMsg" class="hint">
+          Keep this question bank on your own Vercel server, so every computer with the add-on uses the same questions and answers.
+        </p>
+        <form id="syncForm" class="sync-form" autocomplete="off">
+          <div>
+            <label for="syncUrl">Server address</label>
+            <input id="syncUrl" type="url" placeholder="https://your-project.vercel.app" spellcheck="false" />
+          </div>
+          <div>
+            <label for="syncKey">Access key</label>
+            <input id="syncKey" type="password" placeholder="The BANK_TOKEN you set in Vercel" spellcheck="false" />
+          </div>
+          <div class="row">
+            <button type="submit" class="primary" id="connectBtn">Connect</button>
+            <button type="button" id="disconnectBtn" hidden>Disconnect</button>
+          </div>
+        </form>
+        <p class="hint small">
+          Set up the server first: deploy the add-on's <code>server</code> folder to Vercel and add Upstash Redis (see the README).
+          Connecting uploads the questions saved on this computer and downloads everything already in the cloud.
+        </p>
+      </section>
+
+      <div class="toolbar">
+        <button id="addBtn" class="primary">Add question</button>
+        <button id="importBtn">Import…</button>
+        <button id="exportBtn">Export backup</button>
+        <button id="undoBtn">Undo last change</button>
+        <span class="spacer"></span>
+        <button id="clearBtn" class="danger-outline">Delete all</button>
+      </div>
+
+      <p id="msg" class="msg" role="status"></p>
+
+      <section id="addPanel" class="panel" hidden>
+        <h2>Add a question</h2>
+        <label for="newQ">Question</label>
+        <textarea id="newQ" rows="2"></textarea>
+        <label for="newA">Correct answer only <span class="hint">(not the other options; one line per statement, a numbered list for ordering questions)</span></label>
+        <textarea id="newA" rows="4"></textarea>
+        <div class="row">
+          <button id="addSave" class="primary">Save</button>
+          <button id="addCancel">Cancel</button>
+        </div>
+      </section>
+
+      <section id="importPanel" class="panel" hidden>
+        <h2>Import</h2>
+        <p class="hint">
+          Paste the <b>full question</b>, followed by its <b>correct answer only</b> (on the next line or after "Answer:"), with a
+          blank line between questions. Numbered lists, tables and Q:/A: also work, or choose a backup file (.json) or a text file.
+          New questions are added, and questions you already have get their answer updated.
+        </p>
+        <textarea id="importText" rows="8" spellcheck="false" aria-label="Questions and answers to import"></textarea>
+        <div class="row">
+          <input id="importFile" type="file" accept=".json,.txt,.md,text/plain,application/json" aria-label="Import from file" />
+          <span class="spacer"></span>
+          <button id="importSave" class="primary">Add / update</button>
+          <button id="importCancel">Cancel</button>
+        </div>
+      </section>
+
+      <ol id="list" class="list"></ol>
+      <p id="empty" class="empty" hidden>
+        No saved questions yet. Paste your questions and answers in the toolbar popup, or use <b>Import…</b>.
+      </p>
+    </main>
+
+    <script src="../matcher.js"></script>
+    <script src="../bank.js"></script>
+    <script src="bank.js"></script>
+  </body>
+</html>

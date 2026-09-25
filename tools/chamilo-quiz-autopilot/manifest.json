@@ -1,0 +1,60 @@
+{
+  "manifest_version": 2,
+  "name": "Chamilo Quiz Autopilot",
+  "version": "1.4.0",
+  "description": "Answers Chamilo quiz questions from your question bank, synced to your own Vercel server across computers (works with shuffled questions and options), clicks Next, and asks you before ending the test.",
+  "icons": {
+    "48": "icons/icon.svg",
+    "96": "icons/icon.svg"
+  },
+  "permissions": [
+    "storage",
+    "activeTab",
+    "https://*.vercel.app/*"
+  ],
+  "background": {
+    "scripts": [
+      "config.js",
+      "matcher.js",
+      "bank.js",
+      "background.js"
+    ],
+    "persistent": false
+  },
+  "browser_action": {
+    "default_title": "Quiz Autopilot",
+    "default_popup": "popup/popup.html",
+    "default_icon": "icons/icon.svg"
+  },
+  "options_ui": {
+    "page": "bank/bank.html",
+    "open_in_tab": true
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "*://*/*main/exercise/*"
+      ],
+      "js": [
+        "matcher.js",
+        "bank.js",
+        "content.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "chamilo-quiz-autopilot@local",
+      "strict_min_version": "140.0",
+      "data_collection_permissions": {
+        "required": [
+          "none"
+        ]
+      }
+    },
+    "gecko_android": {
+      "strict_min_version": "142.0"
+    }
+  }
+}
