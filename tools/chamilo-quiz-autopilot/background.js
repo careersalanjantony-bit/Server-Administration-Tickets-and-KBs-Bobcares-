@@ -137,8 +137,19 @@
     return { url: cfg.url, hasKey: !!cfg.key, builtIn: !!cfg.builtIn, status: syncStatus, pending: Object.keys(pendingOps).length };
   }
 
+  // The quiz page can't read session storage itself, so it asks here.
+  async function lockState() {
+    if (!String(BUILT_IN.passwordHash || '').trim()) return { locked: false };
+    try {
+      return { locked: !(await api.storage.session.get({ unlocked: false })).unlocked };
+    } catch (e) {
+      return { locked: true };
+    }
+  }
+
   api.runtime.onMessage.addListener((msg) => {
     if (!msg || !msg.type) return undefined;
+    if (msg.type === 'lockState') return lockState();
     if (msg.type === 'sync') return syncNow();
     if (msg.type === 'connect') return connect(msg.url, msg.key);
     if (msg.type === 'disconnect') return disconnect();

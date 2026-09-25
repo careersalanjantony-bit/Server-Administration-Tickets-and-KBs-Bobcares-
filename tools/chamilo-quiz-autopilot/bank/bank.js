@@ -112,8 +112,7 @@
         button('Edit', '', () => {
           editing = e.id;
           render();
-        }),
-        button('Delete', '', () => remove(e.id))
+        })
       );
       li.append(q, ul, meta);
       list.append(li);
@@ -148,15 +147,6 @@
     editing = null;
     await B.save(api, next);
     msg('Saved.');
-    await reload();
-  }
-
-  async function remove(id) {
-    await B.save(
-      api,
-      bank.filter((e) => e.id !== id)
-    );
-    msg('Question deleted. Use "Undo last change" to bring it back.');
     await reload();
   }
 
@@ -238,6 +228,11 @@
       await renderSync();
     });
     $('syncNow').addEventListener('click', syncNow);
+    $('lockBtn').hidden = !QuizLock.enabled();
+    $('lockBtn').addEventListener('click', async () => {
+      await QuizLock.lock();
+      location.reload();
+    });
 
     $('search').addEventListener('input', render);
 
@@ -304,15 +299,6 @@
       await reload();
     });
 
-    $('clearBtn').addEventListener('click', async () => {
-      if (!bank.length) return;
-      const where = cloudOn ? ' They are deleted from the cloud too, for every computer.' : '';
-      if (!window.confirm('Delete all ' + bank.length + ' saved questions?' + where + ' You can still use "Undo last change" right after.')) return;
-      await B.save(api, []);
-      msg('All questions deleted. Use "Undo last change" to bring them back.');
-      await reload();
-    });
-
     api.storage.onChanged.addListener((changes, area) => {
       if (area !== 'local') return;
       if (changes.bank && editing == null) reload();
@@ -324,5 +310,5 @@
     if (cloudOn) syncNow();
   }
 
-  init();
+  QuizLock.guard(init);
 })();

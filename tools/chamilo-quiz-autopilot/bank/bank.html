@@ -13,7 +13,10 @@
           <h1>Question bank</h1>
           <p class="sub"><span id="count">0</span> saved questions. The autopilot answers from these.</p>
         </div>
-        <input id="search" type="search" placeholder="Search questions and answers" aria-label="Search questions and answers" />
+        <div class="topright">
+          <input id="search" type="search" placeholder="Search questions and answers" aria-label="Search questions and answers" />
+          <button id="lockBtn" hidden>Lock</button>
+        </div>
       </header>
 
       <p id="tempWarn" class="banner" hidden></p>
@@ -53,8 +56,6 @@
         <button id="importBtn">Import…</button>
         <button id="exportBtn">Export backup</button>
         <button id="undoBtn">Undo last change</button>
-        <span class="spacer"></span>
-        <button id="clearBtn" class="danger-outline">Delete all</button>
       </div>
 
       <p id="msg" class="msg" role="status"></p>
@@ -93,6 +94,8 @@
       </p>
     </main>
 
+    <script src="../config.js"></script>
+    <script src="../lock.js"></script>
     <script src="../matcher.js"></script>
     <script src="../bank.js"></script>
     <script src="bank.js"></script>

@@ -12,4 +12,8 @@
 globalThis.QUIZ_AUTOPILOT_CONFIG = {
   serverUrl: '', // e.g. 'https://quiz-autopilot-sync.vercel.app'
   accessKey: '', // the BANK_TOKEN value from Vercel
+  // Optional password lock for the add-on. Make the value with
+  //   node scripts/make-password.js "your password"
+  // and paste it here. Leave empty for no lock.
+  passwordHash: '',
 };

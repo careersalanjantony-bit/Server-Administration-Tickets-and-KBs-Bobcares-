@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "Chamilo Quiz Autopilot",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "description": "Answers Chamilo quiz questions from your question bank, synced to your own Vercel server across computers (works with shuffled questions and options), clicks Next, and asks you before ending the test.",
   "icons": {
     "48": "icons/icon.svg",
@@ -36,6 +36,7 @@
         "*://*/*main/exercise/*"
       ],
       "js": [
+        "config.js",
         "matcher.js",
         "bank.js",
         "content.js"

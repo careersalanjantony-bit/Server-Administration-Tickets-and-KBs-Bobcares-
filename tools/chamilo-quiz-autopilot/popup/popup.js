@@ -160,6 +160,11 @@
 
     $('save').addEventListener('click', () => saveBox(false));
     $('syncBtn').addEventListener('click', syncNow);
+    $('lockBtn').hidden = !QuizLock.enabled();
+    $('lockBtn').addEventListener('click', async () => {
+      await QuizLock.lock();
+      window.close();
+    });
     $('clearBox').addEventListener('click', async () => {
       $('key').value = '';
       renderPreview();
@@ -214,5 +219,5 @@
     });
   }
 
-  init();
+  QuizLock.guard(init);
 })();

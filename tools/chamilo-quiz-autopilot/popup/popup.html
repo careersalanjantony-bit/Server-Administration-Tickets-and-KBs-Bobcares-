@@ -8,7 +8,10 @@
   <body>
     <header>
       <h1>Quiz Autopilot</h1>
-      <span id="state" class="badge">Idle</span>
+      <span class="headbtns">
+        <button id="lockBtn" class="link" hidden>Lock</button>
+        <span id="state" class="badge">Idle</span>
+      </span>
     </header>
 
     <div class="bankbar">
@@ -65,6 +68,8 @@ How many websites can be monitored in LSM plan
       pauses on questions it isn't sure about, and it always asks you before pressing <b>End test</b>.
     </p>
 
+    <script src="../config.js"></script>
+    <script src="../lock.js"></script>
     <script src="../matcher.js"></script>
     <script src="../bank.js"></script>
     <script src="popup.js"></script>
