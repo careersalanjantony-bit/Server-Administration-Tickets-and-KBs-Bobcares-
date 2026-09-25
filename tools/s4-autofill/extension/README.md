@@ -103,6 +103,12 @@ Two traps in that list. `duration_h` does **not** contain the substring
 `shift_comment` is a group of seven radio buttons, not a text field, so
 anything matching on "comment" has to check the control type first.
 
+**A post has to say which row it is changing.** `cal_id` is how S4 knows, and
+it is refused outright when empty — probing the editor without one leaves
+`cal_id`, `tid`, `view` and `prv_caldate` all blank, and a post carrying those
+is at best ignored. The editor's address, opened from a real shift, carries a
+`cal_id`; paste it into the editor page box.
+
 **The page only fills in against a real calendar row.** Fetched as
 `chkshift&cal_id=` with nothing after the equals, S4 still renders the form,
 but `cat` comes back with no options at all and `shift_time` with only Flexy.
@@ -243,7 +249,7 @@ It writes to a live roster, so:
 node --test
 ```
 
-98 tests. They load the real `background.js` and `content/s4page.js` into a VM
+102 tests. They load the real `background.js` and `content/s4page.js` into a VM
 with a stand-in `browser` API and a form shaped like S4's, and cover the things
 that would actually corrupt a roster: that duration fields are never mistaken
 for the clock fields, that midnight and noon do not post as hour zero, that a

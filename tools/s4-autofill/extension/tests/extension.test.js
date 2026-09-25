@@ -1327,3 +1327,74 @@ test("splitDate handles S4's date format", () => {
   });
   assert.strictEqual(harness.S4Mapping.splitDate("nonsense"), null);
 });
+
+// ------------------------------------- a post must know which row it changes
+// Probed at chkshift&cal_id= with nothing after the equals, S4 renders the
+// form with every identifying hidden field blank. Posting that tells it
+// nothing about which shift to change.
+
+function blankRowMapping(harness) {
+  const mapping = renderedMapping(harness);
+  mapping.baseFields.cal_id = "";
+  mapping.baseFields.tid = "";
+  return mapping;
+}
+
+test("a live run is refused when cal_id came back empty", async () => {
+  const harness = load({ techIds: TECHS });
+  await harness.send("setPlan", { plan: samplePlan() });
+  await harness.send("setSettings", { settings: { allowWrites: true } });
+  await harness.send("probe");
+  const state = await harness.send("getState");
+  state.mapping.baseFields = { cal_id: "", tid: "", uid: "" };
+  const restarted = load({ techIds: TECHS, storage: { state } });
+  await restarted.send("setSettings", { settings: { allowWrites: true } });
+  const reply = await restarted.send("startRun", { dryRun: false });
+  assert.ok(reply.error, "should refuse");
+  assert.match(reply.error, /cal_id/);
+  assert.strictEqual(restarted.posted.length, 0);
+});
+
+test("the refusal names what is empty and what to do", async () => {
+  const harness = load({ techIds: TECHS });
+  await harness.send("setPlan", { plan: samplePlan() });
+  await harness.send("probe");
+  const state = await harness.send("getState");
+  state.mapping.baseFields = { cal_id: "", tid: "" };
+  const restarted = load({ techIds: TECHS, storage: { state } });
+  await restarted.send("setSettings", { settings: { allowWrites: true } });
+  const reply = await restarted.send("startRun", { dryRun: false });
+  assert.match(reply.error, /Open a shift in S4/i);
+});
+
+test("a dry run still works with an empty cal_id", async () => {
+  const harness = load({ techIds: TECHS });
+  await harness.send("setPlan", { plan: samplePlan() });
+  await harness.send("probe");
+  const state = await harness.send("getState");
+  state.mapping.baseFields = { cal_id: "", tid: "" };
+  const restarted = load({ techIds: TECHS, storage: { state } });
+  const run = await restarted.send("startRun", { dryRun: true });
+  assert.ok(!run.error, run.error);
+  assert.strictEqual(restarted.posted.length, 0);
+});
+
+test("a populated cal_id lets the run proceed", async () => {
+  const harness = gridHarness();
+  await harness.send("setPlan", { plan: samplePlan() });
+  await harness.send("setSettings", { settings: { delayMs: 0, allowWrites: true } });
+  await harness.send("probe");
+  const state = await harness.send("getState");
+  state.mapping.baseFields = { cal_id: "98765", tid: "6" };
+  const restarted = load({
+    techIds: TECHS,
+    storage: { state },
+    grid: EDITOR_URL,
+    pages: { [EDITOR_URL]: "E" },
+    documents: { E: makeDocument(TECHS, {}) },
+  });
+  await restarted.send("setSettings", { settings: { delayMs: 0, allowWrites: true } });
+  const run = await restarted.send("startRun", { dryRun: false });
+  assert.ok(!run.error, run.error);
+  assert.strictEqual(restarted.posted.length, 2);
+});

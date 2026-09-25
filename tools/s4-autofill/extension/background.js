@@ -343,6 +343,26 @@ async function runPlan(dryRun) {
     categoryValues: {},
     staffValues: {},
   };
+  // S4 identifies the row being changed by cal_id. Probing an editor that was
+  // never opened against a real row leaves it empty, and a post carrying an
+  // empty cal_id is at best ignored and at worst applied somewhere unintended.
+  const rowKeys = ["cal_id", "tid"];
+  const blank = rowKeys.filter((name) => {
+    const value = (mapping.baseFields || {})[name];
+    return value !== undefined && String(value).trim() === "";
+  });
+  if (!dryRun && blank.length) {
+    note("error", "Refused to run: the form does not say which row to change", {
+      empty: blank,
+      why: "the editor was read without a cal_id, so S4 rendered it blank",
+    });
+    throw new Error(
+      `Refusing to post: ${blank.join(" and ")} came back empty, so S4 would not know ` +
+        "which shift to change. Open a shift in S4 and paste that page's address into " +
+        "the editor page box, then find the form again."
+    );
+  }
+
   const missing = S4Mapping.missingMapping(mapping, state.plan);
   if (!dryRun && (missing.fields.length || missing.slots.length || missing.categories.length)) {
     note("error", "Refused to run: the mapping is incomplete", missing);
@@ -531,6 +551,7 @@ const handlers = {
       const pages = [];
       let host = null;
       let candidates = [];
+      let gridSamples = [];
 
       const consider = (url, forms, fetched) => {
         const read = readPage(forms, plan);
@@ -569,6 +590,9 @@ const handlers = {
         }
         // Pin real calendar ids onto any bare "...&cal_id=" prefix: without
         // one, S4 serves the form with its Category dropdown empty.
+        if (reply.gridSamples && reply.gridSamples.length) {
+          gridSamples = gridSamples.concat(reply.gridSamples);
+        }
         const ids = reply.calendarIds || [];
         if (ids.length) {
           const bare = (reply.candidates || []).filter((url) => /cal_id=$/.test(url));
@@ -700,6 +724,7 @@ const handlers = {
         tabUrl: chosen.url,
         looked,
         contributed,
+        gridSamples: gridSamples.slice(0, 8),
         forms: chosen.forms,
         // Every page, so a mismatch can be read rather than guessed at.
         pages: pages.map((entry) => ({
@@ -801,6 +826,7 @@ const handlers = {
         contributed: mapping.contributed,
         borrowedFields: mapping.borrowedFields,
         baseFields: mapping.baseFields,
+        gridSamples: mapping.gridSamples,
         // Exactly what one post would carry, which is the thing to check
         // before anything is written.
         sampleBody:

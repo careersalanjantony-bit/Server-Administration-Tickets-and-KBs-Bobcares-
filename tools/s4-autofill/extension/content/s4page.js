@@ -142,6 +142,35 @@
     return [...ids].slice(0, limit || 4);
   }
 
+  /**
+   * Bits of the grid's markup around the editor references.
+   *
+   * The ids are assembled in javascript, so the url scraper only ever sees
+   * "...cal_id=" with nothing after it. Rather than guess at the pattern,
+   * hand back the surrounding markup and let a human read it.
+   */
+  function gridSamples(limit) {
+    const html = document.documentElement ? document.documentElement.innerHTML : "";
+    const samples = [];
+    const needles = [/chkshift/gi, /cal_id/gi, /edit_co_shift/gi];
+    needles.forEach((needle) => {
+      let match;
+      while ((match = needle.exec(html)) !== null && samples.length < (limit || 6)) {
+        const from = Math.max(0, match.index - 160);
+        samples.push(html.slice(from, match.index + 200).replace(/\s+/g, " ").trim());
+        if (samples.length >= (limit || 6)) break;
+      }
+    });
+    // De-duplicate near-identical neighbours.
+    const seen = new Set();
+    return samples.filter((text) => {
+      const key = text.slice(0, 80);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }
+
   /** Fetch another S4 page with the current session and read its forms. */
   async function probeUrl(url) {
     const response = await fetch(url, { credentials: "same-origin" });
@@ -203,6 +232,7 @@
           forms: probeForms(),
           candidates: candidateEditUrls(message.limit),
           calendarIds: calendarIds(message.idLimit),
+          gridSamples: gridSamples(message.sampleLimit),
         });
       case "probeUrl":
         return probeUrl(message.url).catch((error) => ({
