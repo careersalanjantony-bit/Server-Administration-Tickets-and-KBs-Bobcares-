@@ -106,6 +106,9 @@ function render(state) {
   $("month").textContent = plan && plan.month ? plan.month : "";
   $("planInfo").textContent = describePlan(plan);
   $("mapInfo").textContent = describeMapping(mapping, plan);
+  $("mapWhere").textContent = mapping && mapping.tabUrl
+    ? `found on: ${mapping.tabUrl}`
+    : "";
   const mappingClean = listProblems(mapping, plan);
 
   const busy = run.running;

@@ -135,12 +135,17 @@
   ];
 
   function suggestFields(forms, formName) {
-    const form =
-      forms.find((f) => f.name === formName) || forms[0] || { inputs: [], selects: [] };
-    const names = []
-      .concat((form.inputs || []).map((i) => i.name))
-      .concat((form.selects || []).map((s) => s.name))
-      .filter(Boolean);
+    // Look through every form, named one first. On S4's month page the
+    // <form name="shift"> is empty and the controls sit loose in the document,
+    // so stopping at the named form would find nothing at all.
+    const ordered = (forms || [])
+      .filter((f) => f.name === formName)
+      .concat((forms || []).filter((f) => f.name !== formName));
+    const names = [];
+    ordered.forEach((form) => {
+      (form.inputs || []).forEach((i) => i.name && names.push(i.name));
+      (form.selects || []).forEach((s) => s.name && names.push(s.name));
+    });
     const fields = {};
     const taken = new Set();
     FIELD_HINTS.forEach(([field, hints]) => {

@@ -223,3 +223,59 @@ test("missingMapping names the slots it could not match", async () => {
   const missing = harness.S4Mapping.missingMapping(state.mapping, plan);
   assert.deepStrictEqual([...missing.slots], ["ghost"]);
 });
+
+// --------------------------------------------- finding the form on S4's pages
+// S4 splits this over two windows: the month grid carries an empty
+// <form name="shift"> with the controls rendered elsewhere in the document,
+// and the edit popup carries a normal form. Both have to work, and the person
+// should not have to know which window to be on.
+
+test("fields rendered outside the form element are still found", async () => {
+  const harness = load({ techIds: TECHS, loose: true });
+  await harness.send("setPlan", { plan: samplePlan() });
+  const state = await harness.send("probe");
+  assert.ok(!state.error, state.error);
+  assert.strictEqual(Object.keys(state.mapping.shiftTimeValues).length, 15);
+  assert.ok(state.mapping.fields.start_date, "start date should still be found");
+});
+
+test("an empty-form page still posts the same body", async () => {
+  const loose = load({ techIds: TECHS, loose: true });
+  await loose.send("setPlan", { plan: samplePlan() });
+  await loose.send("setSettings", { settings: { delayMs: 0 } });
+  await loose.send("probe");
+  await loose.send("startRun", { dryRun: false });
+
+  const normal = load({ techIds: TECHS });
+  await normal.send("setPlan", { plan: samplePlan() });
+  await normal.send("setSettings", { settings: { delayMs: 0 } });
+  await normal.send("probe");
+  await normal.send("startRun", { dryRun: false });
+
+  assert.deepStrictEqual(loose.posted[0].body, normal.posted[0].body);
+});
+
+test("a password field outside the form is still not read", async () => {
+  const harness = load({ techIds: TECHS, loose: true });
+  await harness.send("setPlan", { plan: samplePlan() });
+  const state = await harness.send("probe");
+  const all = state.mapping.forms.flatMap((f) => f.inputs || []);
+  const password = all.find((i) => i.type === "password");
+  assert.ok(password, "the fixture has a password field");
+  assert.strictEqual(password.value, "");
+});
+
+test("a page with no shift form at all says so plainly", async () => {
+  const harness = load({ techIds: [], selects: false, noFields: true });
+  await harness.send("setPlan", { plan: samplePlan() });
+  const reply = await harness.send("probe");
+  assert.ok(reply.error, "should refuse");
+  assert.match(reply.error, /no shift form/i);
+});
+
+test("the probe records which tab it settled on", async () => {
+  const { state } = await ready();
+  assert.ok(state.mapping.tabId !== undefined);
+  assert.ok(Array.isArray(state.mapping.looked));
+  assert.ok(state.mapping.looked.length >= 1);
+});

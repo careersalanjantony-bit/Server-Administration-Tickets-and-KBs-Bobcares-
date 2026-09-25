@@ -29,9 +29,22 @@ function option(text, value) {
   return { value, textContent: text };
 }
 
-/** A stand-in for S4's shift form. */
-function makeForm(techIds, { selects = true } = {}) {
-  const inputs = [
+/** Which elements a CSS selector like "input[name], textarea[name]" asks for. */
+function pick(selector, inputs, selects) {
+  const out = [];
+  if (/\binput\b|\btextarea\b/.test(selector)) out.push(...inputs);
+  if (/\bselect\b/.test(selector)) out.push(...selects);
+  return out;
+}
+
+/**
+ * A stand-in for an S4 page.
+ *
+ * `loose` reproduces what the month grid actually does: an empty
+ * <form name="shift"> with the controls rendered elsewhere in the document.
+ */
+function makeDocument(techIds, { selects = true, loose = false, noFields = false } = {}) {
+  const inputs = noFields ? [] : [
     { name: "sdate", type: "text", value: "" },
     { name: "edate", type: "text", value: "" },
     { name: "stime_hr", type: "text", value: "" },
@@ -43,26 +56,34 @@ function makeForm(techIds, { selects = true } = {}) {
     { name: "log_reason", type: "textarea", value: "" },
     { name: "pw", type: "password", value: "hunter2" },
   ];
-  const selectEls = selects
+  const selectEls = selects && !noFields
     ? [
         { name: "category", options: CATEGORY_LABELS.map(([t, v]) => option(t, v)) },
         {
           name: "shift_time",
           options: SLOT_LABELS.map((label, i) => option(label, String(i + 1))),
         },
-        {
-          name: "staff",
-          options: techIds.map((id, i) => option(id, String(200 + i))),
-        },
+        { name: "staff", options: techIds.map((id, i) => option(id, String(200 + i))) },
       ]
     : [];
-  return {
+
+  const owned = loose ? { inputs: [], selects: [] } : { inputs, selects: selectEls };
+  const form = {
     getAttribute(name) {
-      return { name: "shift", action: "index.php?action=view_shift", method: "POST" }[name] || null;
+      return (
+        { name: "shift", action: "index.php?action=view_shift", method: "POST" }[name] || null
+      );
     },
     querySelectorAll(selector) {
-      if (selector.includes("select")) return selectEls;
-      return inputs;
+      return pick(selector, owned.inputs, owned.selects);
+    },
+  };
+
+  return {
+    forms: [form],
+    title: "S4",
+    querySelectorAll(selector) {
+      return pick(selector, inputs, selectEls);
     },
   };
 }
@@ -132,7 +153,11 @@ function load(options = {}) {
       href: "https://s4.inhouse.net/index.php?action=view_shift&t=6",
       origin: "https://s4.inhouse.net",
     },
-    document: { forms: [makeForm(techIds, { selects })], title: "S4" },
+    document: makeDocument(techIds, {
+      selects,
+      loose: options.loose,
+      noFields: options.noFields,
+    }),
     browser: bus.api("content"),
     setTimeout,
     async fetch(url, init) {

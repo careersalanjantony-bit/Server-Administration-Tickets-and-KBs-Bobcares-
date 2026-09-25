@@ -40,11 +40,24 @@ Then, in Firefox:
 1. Log in to S4 and open the shift page for the month you are filling.
 2. Click the toolbar button.
 3. **Load the plan** — pick `out/2026-11/plan.json`.
-4. **Read the form on this page** — it works out which dropdown option is which
-   shift, category and tech, and tells you what it could not match.
+4. **Find the shift form** — it works out which dropdown option is which shift,
+   category and tech, and tells you what it could not match.
 5. **Dry run** — sends nothing. Check the list.
 6. **Fill S4 for real** — asks you to confirm, then posts, with a progress bar
    and a Stop button.
+
+### Which page to be on
+
+It does not matter much, which is deliberate. S4 spreads this over two windows:
+the month grid carries an empty `<form name="shift">` with the controls
+rendered loose in the document, and the edit popup carries a normal form. The
+probe checks **every open S4 tab**, sweeps up named fields whether or not they
+sit inside a `<form>`, and keeps whichever page has the real thing — then shows
+you which one it picked.
+
+If it cannot find a shift form anywhere, it says so rather than guessing: open
+the shift edit window (the one with Category, Shift Time and Duration on it)
+and probe again.
 
 The popup can be closed mid-run. The run lives in the background script, so
 progress survives closing it and carries on.
@@ -100,12 +113,13 @@ It writes to a live roster, so:
 node --test
 ```
 
-21 tests. They load the real `background.js` and `content/s4page.js` into a VM
+26 tests. They load the real `background.js` and `content/s4page.js` into a VM
 with a stand-in `browser` API and a form shaped like S4's, and cover the things
 that would actually corrupt a roster: that duration fields are never mistaken
 for the clock fields, that midnight and noon do not post as hour zero, that a
 dry run sends nothing, that an incomplete mapping blocks a live run, that error
-pages are not counted as successes, and that Stop actually stops.
+pages are not counted as successes, that Stop actually stops, and that both of
+S4's page layouts produce byte-identical POST bodies.
 
 The real October plan — 534 blocks, 868 tech-days — runs through the harness
 with all 15 shift times, all 28 staff and all 12 fields mapped, and nothing
