@@ -23,6 +23,7 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from .holidays import holiday_code
 from .model import MonthInput, Roster, ShiftConfig
 from .monthcal import month_days, parse_month
 from .xlsxread import read_rows
@@ -60,6 +61,8 @@ class Submission:
     unavoidable: list[dt.date] = field(default_factory=list)
     leave_days: list[dt.date] = field(default_factory=list)
     holidays: list[dt.date] = field(default_factory=list)
+    # 'YYYY-MM-DD' -> the S4 holiday code of the column the date was picked in.
+    holiday_codes: dict[str, str] = field(default_factory=dict)
     notes: str = ""
     row: int = 0
 
@@ -137,12 +140,24 @@ def read_submissions(path: Path, month: str) -> tuple[list[Submission], dict[str
     holidays: dict[str, str] = {}
     # The holiday column headers name the holiday and its date, e.g.
     # "Holiday 2 Thiruvonam August 26 Wednesday".
-    for header in holiday_columns.values():
+    # Each column is one holiday, and S4 records its day off under that
+    # holiday's own code ("Gandhi Jayanti(GJ)"), so the code goes with the
+    # column rather than a generic PH.
+    column_codes: dict[int, str] = {}
+    for index, header in holiday_columns.items():
+        name = re.sub(r"holiday\s*\d+", "", header, flags=re.I)
+        name = DATE.sub("", name)
+        name = re.sub(r"\b(mon|tues|wednes|thurs|fri|satur|sun)day\b", "", name, flags=re.I)
+        name = " ".join(name.split()) or "Public holiday"
         for date in parse_dates(header, year, mon):
-            name = re.sub(r"holiday\s*\d+", "", header, flags=re.I)
-            name = DATE.sub("", name)
-            name = re.sub(r"\b(mon|tues|wednes|thurs|fri|satur|sun)day\b", "", name, flags=re.I)
-            holidays[date.isoformat()] = " ".join(name.split()) or "Public holiday"
+            holidays[date.isoformat()] = name
+        code = holiday_code(name) or holiday_code(header)
+        if not code:
+            warnings.append(
+                f"holiday column {header!r}: no S4 holiday category matches {name!r}, "
+                "so days picked in it go in as PH."
+            )
+        column_codes[index] = code or "PH"
 
     def cell(row: list[str], key: str) -> str:
         index = columns.get(key)
@@ -173,6 +188,9 @@ def read_submissions(path: Path, month: str) -> tuple[list[Submission], dict[str
             leave_days=parse_dates(cell(row, "leave_days"), year, mon),
             holidays=[d for index in holiday_columns
                       for d in parse_dates(row[index] if index < len(row) else "", year, mon)],
+            holiday_codes={d.isoformat(): column_codes[index] for index in holiday_columns
+                           for d in parse_dates(row[index] if index < len(row) else "",
+                                                year, mon)},
             notes=cell(row, "notes").strip(),
             row=number,
         )
@@ -365,7 +383,7 @@ def to_month_input(submissions: list[Submission], roster: Roster, config: ShiftC
                 warnings.append(f"{tech.id}: leave day {date} is outside {month} — ignored.")
         for date in submission.holidays:
             if date in days:
-                dated[date.isoformat()] = "PH"
+                dated[date.isoformat()] = submission.holiday_codes.get(date.isoformat(), "PH")
         if dated:
             month_input.leave.setdefault(tech.id, {}).update(dated)
 

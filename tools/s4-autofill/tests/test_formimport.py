@@ -242,3 +242,67 @@ def test_xlsx_and_csv_read_the_same_way(tmp_path):
     from_xlsx, _, _ = read_submissions(path, "2026-09")
     assert from_xlsx[0].tech == "ann"
     assert from_xlsx[0].off_days == [dt.date(2026, 9, 3)]
+
+
+# ------------------------------------------------------------------- holidays
+# S4 has no single public-holiday category: a holiday's day off is recorded
+# under its own code, "Gandhi Jayanti(GJ)", "Vijayadasmi(VJ)". October 2026
+# has both.
+
+OCTOBER_FORM = (
+    "ID,ID 2,Tech Name,Choose ALL OFF days,Unavoidable Off- 1,Unavoidable Off- 2,"
+    "Holiday 1 Gandhi Jayanti October 2 Friday,Holiday 2 Vijayadashami October 21 Wednesday,"
+    "\"choose LEAVE(CL, ML & PV) days only\",Any preferences and notes,Source\n"
+    "a1,1,ann,October 5 Monday,,,October 2 Friday,October 20 Tuesday,,,x\n"
+    "b2,2,bob,,,,October 1 Thursday,October 21 Wednesday,,,x\n"
+)
+
+
+def test_holiday_names_become_s4_codes():
+    from s4autofill.holidays import holiday_code
+    assert holiday_code("Gandhi Jayanti") == "GJ"
+    assert holiday_code("Vijayadashami") == "VJ"   # S4 spells it Vijayadasmi
+    assert holiday_code("Vijayadasmi") == "VJ"
+    assert holiday_code("Thiruvonam") == "OM"
+    assert holiday_code("Christmas Eve") == "CME"  # not Christmas
+    assert holiday_code("Vishu/Good Friday") == "VGF"
+    assert holiday_code("Good Friday") == "GF"
+    assert holiday_code("GJ") == "GJ"
+    assert holiday_code("Founders Day") is None
+
+
+def test_a_day_picked_in_a_holiday_column_carries_that_holidays_code(tmp_path):
+    path = tmp_path / "october.csv"
+    path.write_text(OCTOBER_FORM)
+    submissions, holidays, warnings = read_submissions(path, "2026-10")
+    assert holidays == {"2026-10-02": "Gandhi Jayanti", "2026-10-21": "Vijayadashami"}
+    assert not warnings
+    roster, config = default_team(), make_config()
+    month_input, _ = to_month_input(submissions, roster, config, "2026-10", holidays)
+    # A day taken in lieu keeps the code of the holiday it is for.
+    assert month_input.leave["ann"]["2026-10-02"] == "GJ"
+    assert month_input.leave["ann"]["2026-10-20"] == "VJ"
+    assert month_input.leave["bob"]["2026-10-01"] == "GJ"
+    assert month_input.leave["bob"]["2026-10-21"] == "VJ"
+
+
+def test_holiday_days_are_planned_as_days_off_under_their_code(tmp_path):
+    path = tmp_path / "october.csv"
+    path.write_text(OCTOBER_FORM)
+    submissions, holidays, _ = read_submissions(path, "2026-10")
+    roster, config = default_team(), make_config()
+    month_input, _ = to_month_input(submissions, roster, config, "2026-10", holidays)
+    rows = {r.date.isoformat(): r for r in build_plan(config, roster, month_input,
+                                                      "2026-10").by_tech()["ann"]}
+    assert rows["2026-10-02"].category == "GJ" and not rows["2026-10-02"].is_working
+    assert rows["2026-10-20"].category == "VJ" and not rows["2026-10-20"].is_working
+
+
+def test_an_unknown_holiday_is_warned_and_kept_as_ph(tmp_path):
+    path = tmp_path / "odd.csv"
+    path.write_text(OCTOBER_FORM.replace("Vijayadashami", "Founders Day"))
+    submissions, holidays, warnings = read_submissions(path, "2026-10")
+    assert any("Founders Day" in w for w in warnings)
+    month_input, _ = to_month_input(submissions, default_team(), make_config(), "2026-10",
+                                    holidays)
+    assert month_input.leave["bob"]["2026-10-21"] == "PH"

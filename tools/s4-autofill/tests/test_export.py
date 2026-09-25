@@ -108,3 +108,24 @@ def test_extension_plan_says_why_each_shift_was_chosen(tmp_path):
     plan, config, roster = build(tmp_path)
     doc = json.loads(write_extension_plan(plan, config, roster, tmp_path / "p.json").read_text())
     assert any(a["source"] for a in doc["assignments"])
+
+
+def test_holiday_codes_reach_the_extension_plan_and_fold_into_ph_in_the_summary(tmp_path):
+    from s4autofill.model import MonthInput
+    config, roster = make_config(), default_team()
+    month_input = MonthInput(
+        month="2026-10",
+        public_holidays={"2026-10-02": "Gandhi Jayanti"},
+        leave={"ann": {"2026-10-02": "PH"}},
+    )
+    plan = build_plan(config, roster, month_input, "2026-10")
+    written = write_all(plan, config, roster, tmp_path)
+    extension = json.loads(written["extension"].read_text())
+    assert extension["categories"]["GJ"] == "Gandhi Jayanti"
+    assert any(a["tech_id"] == "ann" and a["category"] == "GJ" and a["start_date"] == "02-Oct-2026"
+               for a in extension["assignments"])
+    rows = list(csv.reader(open(written["summary"])))
+    header = rows[0]
+    assert "GJ" not in header, "eighteen holiday columns would bury the sheet"
+    ann = next(r for r in rows[1:] if r[1] == roster.get("ann").display_name)
+    assert ann[header.index("PH")] == "1"

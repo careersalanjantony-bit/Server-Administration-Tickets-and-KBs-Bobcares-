@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from .holidays import S4_HOLIDAYS
 from .monthcal import WEEKDAYS, normalise_weekdays, weekday_index
 
 CONFIG_DIR = Path(__file__).resolve().parent.parent / "config"
@@ -119,6 +120,16 @@ class ShiftConfig:
     rules: Rules
     categories: dict[str, str]
     leave_categories: list[str]
+
+    def __post_init__(self) -> None:
+        # Every S4 holiday code (GJ, VJ, …) is a day off like PH, and a
+        # category a plan may carry, whether or not shifts.json lists it.
+        self.categories = dict(self.categories)
+        self.leave_categories = list(self.leave_categories)
+        for code, name in S4_HOLIDAYS.items():
+            self.categories.setdefault(code, name)
+            if code not in self.leave_categories:
+                self.leave_categories.append(code)
 
     def slot(self, slot_id: str) -> Slot:
         for s in self.slots:

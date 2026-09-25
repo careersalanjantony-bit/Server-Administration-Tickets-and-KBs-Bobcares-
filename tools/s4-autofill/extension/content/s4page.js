@@ -296,11 +296,14 @@
       .replace(/\s+/g, " ")
       .trim();
     const hit = stripped.match(FAILURE_WORDS);
+    // What S4 said, briefly — worth keeping even when it reads as success,
+    // since the only real proof of a save is reading the grid back.
+    const snippet = stripped.slice(0, 300);
     if (hit) {
       const at = Math.max(0, stripped.toLowerCase().indexOf(hit[0].toLowerCase()) - 60);
-      return { ok: false, detail: stripped.slice(at, at + 200) };
+      return { ok: false, detail: stripped.slice(at, at + 200), snippet };
     }
-    return { ok: true, detail: `HTTP ${status}, ${stripped.length} chars back` };
+    return { ok: true, detail: `HTTP ${status}, ${stripped.length} chars back`, snippet };
   }
 
   async function postOne(body, action) {

@@ -21,9 +21,10 @@ cd tools/s4-autofill
 python3 -m s4autofill import-form 'November off form submissions.xlsx' \
     --month 2026-11 --apply-notes --save
 
-# 2. Build the month
-python3 -m s4autofill plan --month 2026-11 \
-    --holiday 2026-11-14="Children's Day"
+# 2. Build the month (holidays are usually read off the form's own headers;
+#    --holiday adds any it does not name, e.g. October 2026's two)
+python3 -m s4autofill plan --month 2026-10 \
+    --holiday 2026-10-02="Gandhi Jayanti" 2026-10-21=Vijayadashami
 
 # 3. Open out/2026-11/preview.html and read it
 
@@ -52,6 +53,21 @@ Three things it takes from the sheet beyond the dates:
   back when a day is over-subscribed (see arbitration below).
 - **The holiday column headers** carry the holiday's name and date, so public
   holidays are picked up without being typed again.
+
+### Holidays go in under their own S4 code
+
+S4 has no single "public holiday" category. A day off for a holiday is
+recorded under that holiday's own code — `Gandhi Jayanti(GJ)`,
+`Vijayadasmi(VJ)` — which is what the grid shows. So a day somebody picks in a
+holiday column goes into the plan as that column's code, including a day taken
+in lieu on another date, and a `PH` placed on a declared holiday becomes that
+holiday's code too.
+
+The name is matched loosely (`Vijayadashami` finds S4's `Vijayadasmi`,
+`Thiruvonam` finds `Onam`); the full list is in
+[`s4autofill/holidays.py`](s4autofill/holidays.py). A holiday no S4 category
+matches is warned about and left as `PH` — which the extension then refuses to
+post, because S4 has nothing called that.
 
 The CL/ML/PV column does not say which of the three a day is; everything in it
 becomes `CL` unless you pass `--leave-category`.
@@ -304,8 +320,8 @@ if there are errors.
 ## Tests
 
 ```bash
-python3 -m pytest tests/ -q      # 104 tests, the planner
-cd extension && node --test      # 147 tests, the extension
+python3 -m pytest tests/ -q      # 111 tests, the planner
+cd extension && node --test      # 153 tests, the extension
 ```
 
 ---

@@ -415,6 +415,7 @@ function payloadsFrom(plan) {
 async function runPlan(dryRun) {
   await ready;
   if (state.run.running) throw new Error("A run is already going.");
+  if (testing) throw new Error("The one-row test is still going.");
   // The probe reads a dozen pages and takes a while. Starting a run in the
   // middle of it ran the whole month against no mapping at all.
   if (state.probing) {
@@ -656,7 +657,258 @@ async function runPlan(dryRun) {
   return state.run;
 }
 
+// ------------------------------------------------------- the one-row test
+//
+// The only proof a post works is S4 showing the change. So before a month is
+// written, one working day is moved to the nearest other shift, the grid is
+// read back, the original is put back, and the grid is read again.
+
+const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                     "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+function s4Date(iso) {
+  const [year, month, day] = iso.split("-");
+  return `${day}-${MONTH_NAMES[Number(month) - 1]}-${year}`;
+}
+
+/** The plan month's grid, read fresh — the one place a save shows up. */
+function gridUrl(plan) {
+  const origin =
+    state.mapping && state.mapping.tabUrl
+      ? new URL(state.mapping.tabUrl).origin
+      : "https://s4.inhouse.net";
+  const [year, month] = plan.month.split("-").map(Number);
+  if (plan.team_id !== undefined && plan.team_id !== null) {
+    return `${origin}/index.php?action=view_shift&t=${plan.team_id}&y=${year}&m=${month}`;
+  }
+  return constructedCandidates(plan, origin).slice(-1)[0];
+}
+
+async function readGridBack(plan) {
+  const reply = await ask({ type: "probeUrl", url: gridUrl(plan) });
+  if (!reply || !reply.ok) {
+    const why = reply ? reply.detail || `HTTP ${reply.status}` : "no reply";
+    throw new Error(`could not read the grid back (${why})`);
+  }
+  return ((reply.grid && reply.grid.cells) || []).filter((cell) =>
+    (S4Mapping.normaliseDate(cell.date) || "").startsWith(plan.month)
+  );
+}
+
+function cellFor(cells, uid, iso, team) {
+  return S4Mapping.indexCells(cells, team).index[`${uid}|${iso}`];
+}
+
+function minutesOf(time) {
+  const [h, m] = String(time).split(":").map(Number);
+  return h * 60 + m;
+}
+
+function testPayload(tech, slot, iso, duration) {
+  return {
+    tech_id: tech, category: "W", slot_id: slot.id, shift_time: slot.label,
+    start_date: s4Date(iso), end_date: s4Date(iso), days: 1,
+    time: S4Mapping.labelStart(slot.label), duration_min: Number(duration) || 480,
+    reason: "S4 autofill one-row test", source: "test",
+  };
+}
+
+/**
+ * Which row to test on: a day S4 has as a normal working shift, so moving it
+ * to the next shift along and back is a small, reversible change.
+ */
+function pickTest(plan, mapping, index, techArg, dateArg) {
+  const [year, month] = plan.month.split("-").map(Number);
+  const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  const iso = (dateArg || `${plan.month}-${String(lastDay).padStart(2, "0")}`).trim();
+  if (!iso.startsWith(plan.month)) {
+    return { error: `${iso} is not in the plan's month (${plan.month})` };
+  }
+  const byValue = {};
+  Object.entries(mapping.categoryValues || {}).forEach(([code, value]) => {
+    byValue[String(value)] = code;
+  });
+  const techs = techArg ? [techArg.trim()] : (plan.techs || []).map((t) => t.id);
+  let why = "";
+  for (const tech of techs) {
+    const uid = (mapping.staffValues || {})[tech];
+    const cell = uid && index[`${uid}|${iso}`];
+    const time = cell && S4Mapping.cellTime(cell.time);
+    const current =
+      time && (plan.slots || []).find((slot) => S4Mapping.labelStart(slot.label) === time);
+    if (!uid) why = `${tech} has no S4 user id`;
+    else if (!cell || !/^\d+$/.test(String(cell.cal_id)) || Number(cell.cal_id) === 0) {
+      why = `${tech} has no calendar row on ${iso}`;
+    } else if (byValue[String(cell.cat_id)] !== "W") {
+      why = `${tech} is not on a working shift on ${iso} (S4 has ${byValue[String(cell.cat_id)] || `cat ${cell.cat_id}`})`;
+    } else if (!current || !(mapping.shiftTimeValues || {})[current.id]) {
+      why = `${tech}'s shift on ${iso} (${time}) is not one of the plan's shift times`;
+    } else {
+      const others = (plan.slots || []).filter(
+        (slot) =>
+          slot.id !== current.id &&
+          S4Mapping.labelStart(slot.label) &&
+          (mapping.shiftTimeValues || {})[slot.id]
+      );
+      if (!others.length) {
+        why = "no other shift time to move to";
+        continue;
+      }
+      const next = others.reduce((best, slot) =>
+        Math.abs(minutesOf(S4Mapping.labelStart(slot.label)) - minutesOf(time)) <
+        Math.abs(minutesOf(S4Mapping.labelStart(best.label)) - minutesOf(time))
+          ? slot
+          : best
+      );
+      return {
+        tech, uid, iso, cell, current, next,
+        original: testPayload(tech, current, iso, cell.duration),
+        changed: testPayload(tech, next, iso, cell.duration),
+      };
+    }
+    if (techArg) break;
+  }
+  return { error: `Nothing to test on: ${why || "no working day found"}. Pick a tech and a day they work.` };
+}
+
+let testing = false;
+
+function testReady(needWrites) {
+  if (!state.plan) throw new Error("Load a plan first.");
+  if (!state.mapping) throw new Error("Find the shift form first.");
+  if (!state.grid || !(state.grid.cells || []).length) {
+    throw new Error("The grid's calendar rows have not been read — Find the shift form again.");
+  }
+  if (state.run.running || state.probing || testing) {
+    throw new Error("Something else is going — wait for it to finish.");
+  }
+  if (needWrites && !state.settings.allowWrites) {
+    throw new Error("Writing to S4 is locked. Tick \u201cAllow writing to S4\u201d first.");
+  }
+}
+
+async function planTestRow({ tech, date } = {}) {
+  await ready;
+  testReady(false);
+  const { index } = S4Mapping.indexCells(state.grid.cells, state.plan.team_id);
+  const pick = pickTest(state.plan, state.mapping, index, tech, date);
+  if (pick.error) throw new Error(pick.error);
+  return {
+    tech: pick.tech,
+    date: s4Date(pick.iso),
+    calId: pick.cell.cal_id,
+    from: pick.current.label,
+    to: pick.next.label,
+  };
+}
+
+async function runTestRow({ tech, date } = {}) {
+  await ready;
+  testReady(true);
+  const plan = state.plan;
+  const mapping = state.mapping;
+  const team = plan.team_id;
+  const pick = pickTest(plan, mapping, S4Mapping.indexCells(state.grid.cells, team).index, tech, date);
+  if (pick.error) throw new Error(pick.error);
+
+  testing = true;
+  const steps = [];
+  const base = mapping.tabUrl ? `${new URL(mapping.tabUrl).origin}/` : "https://s4.inhouse.net/";
+  const ctxFor = (cells) => ({
+    index: S4Mapping.indexCells(cells, team).index,
+    signature: state.grid.signature,
+    base,
+    plan,
+  });
+  const shows = (cell, payload) =>
+    !!cell &&
+    S4Mapping.cellTime(cell.time) === payload.time &&
+    String(cell.cat_id) === String(mapping.categoryValues.W);
+  const result = {
+    tech: pick.tech, date: s4Date(pick.iso), calId: pick.cell.cal_id,
+    from: pick.current.label, to: pick.next.label,
+    changed: false, restored: false, steps, at: new Date().toISOString(),
+  };
+  note("warn", "One-row test started — writing to S4", {
+    tech: result.tech, date: result.date, from: result.from, to: result.to,
+  });
+
+  const send = async (label, payload, cells) => {
+    const prepared = await prepareRow(payload, mapping, ctxFor(cells), true);
+    if (prepared.unchanged) {
+      steps.push({ step: label, ok: true, detail: "S4 already shows it — nothing sent" });
+      return true;
+    }
+    if (!prepared.ok) {
+      steps.push({ step: label, ok: false, detail: `not sent: ${prepared.detail}` });
+      return false;
+    }
+    let reply;
+    try {
+      reply = await ask({ type: "post", body: prepared.body, action: prepared.action });
+    } catch (error) {
+      reply = { ok: false, detail: error.message };
+    }
+    steps.push({
+      step: label, ok: !!reply.ok, detail: reply.detail || "", said: reply.snippet || "",
+      body: prepared.body,
+    });
+    return !!reply.ok;
+  };
+
+  try {
+    // 1. Move the day to the next shift along, and read it back.
+    await send(`change to ${pick.next.label}`, pick.changed, state.grid.cells);
+    let cells = await readGridBack(plan);
+    let now = cellFor(cells, pick.uid, pick.iso, team);
+    result.changed = shows(now, pick.changed);
+    steps.push({
+      step: "read S4 back",
+      ok: result.changed,
+      detail: now ? `S4 shows ${S4Mapping.cellTime(now.time)}, cat ${now.cat_id}` : "the cell is gone",
+    });
+
+    // 2. Put it back — whether or not the change showed, the day must end
+    // the test as it started.
+    if (!shows(now, pick.original)) {
+      await send(`change back to ${pick.current.label}`, pick.original, cells);
+      cells = await readGridBack(plan);
+      now = cellFor(cells, pick.uid, pick.iso, team);
+      steps.push({
+        step: "read S4 back",
+        ok: shows(now, pick.original),
+        detail: now ? `S4 shows ${S4Mapping.cellTime(now.time)}, cat ${now.cat_id}` : "the cell is gone",
+      });
+    }
+    result.restored = shows(now, pick.original);
+  } catch (error) {
+    steps.push({ step: "stopped", ok: false, detail: error.message });
+  } finally {
+    testing = false;
+    state.lastTest = result;
+    if (!result.restored) {
+      note("error", "One-row test: the day was NOT put back — fix it by hand in S4", {
+        tech: result.tech, date: result.date, setBackTo: result.from,
+      });
+    } else {
+      note(result.changed ? "ok" : "warn", "One-row test finished", {
+        changedInS4: result.changed, restored: result.restored,
+      });
+    }
+    await save();
+  }
+  return result;
+}
+
 const handlers = {
+  async planTest(message) {
+    return planTestRow(message);
+  },
+
+  async runTest(message) {
+    return runTestRow(message);
+  },
+
   async getState() {
     await ready;
     return state;
@@ -1157,19 +1409,13 @@ const handlers = {
                   .slice(0, 7);
               })(),
               distinctRowIds: new Set(state.grid.cells.map((c) => c.cal_id)).size,
-              cellsSpanningDays: state.grid.cells.filter(
-                (c) => c.start_date && c.end_date && c.start_date !== c.end_date
-              ).length,
+              // cal_id 0 cells: what a person S4 gives no row id looks like.
+              zeroIdSample: state.grid.cells.filter((c) => String(c.cal_id) === "0").slice(0, 2),
             }
           : null,
-        // Exactly what one post would carry, which is the thing to check
-        // before anything is written.
-        sampleBody:
-          plan && plan.assignments && plan.assignments.length
-            ? S4Mapping.buildBody(plan.assignments[0], mapping)
-            : null,
-        // The first rows of the last run as built — after a dry run these
-        // are real editors read for real rows, cal_id and all.
+        // (A single sampleBody used to sit here, built from the probe's own
+        // editor — one person's cal_id with another's uid. firstBodies, built
+        // per row, is the real thing.)
         // Every option of the posting form's own dropdowns, in full — the
         // mismatch list is capped, and a missing category hides in the cap.
         editorOptions: (() => {
@@ -1208,6 +1454,7 @@ const handlers = {
           ? state.lastProbe
           : null,
       missing: plan && mapping ? S4Mapping.missingMapping(mapping, plan) : null,
+      lastTest: state.lastTest || null,
       settings: state.settings,
       run: {
         running: state.run.running,

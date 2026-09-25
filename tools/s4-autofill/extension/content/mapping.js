@@ -515,6 +515,15 @@
     return `${padded.slice(0, 2)}:${padded.slice(2, 4)}`;
   }
 
+  /** "06:58am-02:58pm" -> "06:58", "3:00pm-11:00pm" -> "15:00"; Flexy -> null. */
+  function labelStart(label) {
+    const m = /(\d{1,2}):(\d{2})\s*([ap]m)/i.exec(label || "");
+    if (!m) return null;
+    let hour = parseInt(m[1], 10) % 12;
+    if (m[3].toLowerCase() === "pm") hour += 12;
+    return `${String(hour).padStart(2, "0")}:${m[2]}`;
+  }
+
   /** Every date a block covers, as YYYY-MM-DD. */
   function blockDays(payload) {
     const from = splitDate(payload.start_date);
@@ -591,7 +600,7 @@
     timeKey, clean, matchOptions, suggestFields, buildBody, missingMapping,
     splitDate, baseFieldsOf,
     KNOWN_POPUP_PARAMS, parseCallArgs, parseConcat, popupSignature, editorUrl,
-    normaliseDate, indexCells, cellTime, blockDays, compareBlock,
+    normaliseDate, indexCells, cellTime, blockDays, compareBlock, labelStart,
   };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.S4Mapping = api;

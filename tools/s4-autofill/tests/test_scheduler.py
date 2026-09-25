@@ -167,9 +167,27 @@ def test_public_holiday_lands_on_a_declared_date():
         targets={"ann": {"off_days": 4, "PH": 1}},
     )
     plan = plan_for(default_team(), month_input)
-    holiday = [r for r in plan.by_tech()["ann"] if r.category == "PH"]
+    # S4 records it under the holiday's own code, not a generic PH.
+    holiday = [r for r in plan.by_tech()["ann"] if r.category == "GJ"]
     assert len(holiday) == 1
     assert holiday[0].date.isoformat() == "2026-10-02"
+    assert not holiday[0].is_working
+
+
+def test_a_dated_ph_on_a_declared_holiday_takes_its_code():
+    month_input = MonthInput(
+        month="2026-10",
+        public_holidays={"2026-10-21": "Vijayadashami"},
+        leave={"ann": {"2026-10-21": "PH"}},
+    )
+    rows = {r.date.isoformat(): r for r in plan_for(default_team(), month_input).by_tech()["ann"]}
+    assert rows["2026-10-21"].category == "VJ"
+
+
+def test_a_ph_on_an_undeclared_day_stays_ph():
+    month_input = MonthInput(month="2026-10", leave={"ann": {"2026-10-14": "PH"}})
+    rows = {r.date.isoformat(): r for r in plan_for(default_team(), month_input).by_tech()["ann"]}
+    assert rows["2026-10-14"].category == "PH"
 
 
 def test_joiner_is_not_scheduled_before_their_start_date():

@@ -116,3 +116,6 @@ input[type="text"] {
 .log .warn { color: #9A6B00; }
 .log .error { color: var(--stop); }
 .log .info { color: var(--ink); }
+
+details.test { margin: 10px 0; }
+details.test input[type=text] { width: 12em; }

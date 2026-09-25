@@ -23,6 +23,7 @@ from __future__ import annotations
 import datetime as dt
 from dataclasses import dataclass, field
 
+from .holidays import holiday_code
 from .model import MonthInput, Roster, ShiftConfig, Slot, Tech
 from .monthcal import month_days, parse_hhmm, parse_month, shift_window, weekday_name
 
@@ -600,7 +601,13 @@ class Scheduler:
                         f"the {category} on that date was not counted."
                     )
                     continue
-                state.day_category[day] = category
+                state.day_category[day] = self._holiday_category(category, day)
+
+    def _holiday_category(self, category: str, day: dt.date) -> str:
+        """A generic PH on a declared holiday becomes that holiday's S4 code."""
+        if category != "PH":
+            return category
+        return holiday_code(self.input.public_holidays.get(day.isoformat(), "")) or "PH"
 
     def _revocable_off(self, state: _TechState, day: dt.date) -> bool:
         """An off we may take back: a request, not a standing arrangement.
@@ -705,7 +712,7 @@ class Scheduler:
                         -self._slack(states, d),
                         d,
                     ))
-                    state.day_category[best] = category
+                    state.day_category[best] = self._holiday_category(category, best)
 
     def _place_extra_offs(self, states: dict[str, _TechState], days: list[dt.date]) -> None:
         """Honour 'total off days' higher than the fixed weekday pattern gives."""

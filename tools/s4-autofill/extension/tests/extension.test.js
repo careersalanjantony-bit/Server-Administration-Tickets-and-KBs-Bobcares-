@@ -2113,3 +2113,114 @@ test("diagnostics list the editor's categories in full", async () => {
   assert.strictEqual(diag.mapping.grid.sampleCells.length, 7);
   assert.ok(diag.mapping.grid.sampleCells.every((c) => c.user === diag.mapping.grid.sampleCells[0].user));
 });
+
+// ------------------------------------------------------------ the one-row test
+// Nothing proves a post works except S4 showing the change. The test moves one
+// working day to the next shift along, reads the grid back, puts it back and
+// reads again — against a fake S4 here that applies what it is sent.
+
+const { SLOT_LABELS } = require("./harness.js");
+
+/** A fake S4 that applies a change_shift post to its cells, as the real one would. */
+function liveS4(cells, { ignore = () => false } = {}) {
+  return {
+    cells,
+    apply(body, n) {
+      if (ignore(n)) return;
+      const label = SLOT_LABELS[Number(body.shift_time) - 850];
+      const [hh, mm] = require("./harness.js").load({ techIds: [] }).S4Mapping
+        .labelStart(label).split(":");
+      const from = `${body.startyear}-${body.startmonth}-${body.startday}`;
+      const to = `${body.endyear}-${body.endmonth}-${body.endday}`;
+      cells.forEach((cell) => {
+        if (cell.user === body.uid && cell.date >= from && cell.date <= to) {
+          cell.time = String(Number(`${hh}${mm}00`));
+          cell.cat_id = body.cat;
+        }
+      });
+    },
+  };
+}
+
+async function testS4(options = {}) {
+  const cells = realCells();
+  const live = liveS4(cells, options);
+  const harness = load({
+    techIds: TECHS,
+    grid: "https://s4.inhouse.net/index.php?action=nothing",
+    cells,
+    editor: realEditor,
+    live,
+  });
+  await harness.send("setPlan", { plan: samplePlan() });
+  await harness.send("setSettings", {
+    settings: { delayMs: 0, allowWrites: options.allowWrites !== false },
+  });
+  await harness.send("probe");
+  return { harness, cells };
+}
+
+const mojinOn = (cells, iso) => cells.find((c) => c.user === "200" && c.date === iso);
+
+test("the one-row test says what it will do before doing it", async () => {
+  const { harness } = await testS4();
+  const pick = await harness.send("planTest", {});
+  assert.deepStrictEqual(
+    { tech: pick.tech, date: pick.date, from: pick.from, to: pick.to },
+    { tech: "mojin.t", date: "31-Oct-2026", from: "06:58am-02:58pm", to: "7:00am-3:00pm" }
+  );
+  assert.strictEqual(harness.posted.length, 0, "planning it sends nothing");
+});
+
+test("the one-row test changes a day, sees it in S4, and puts it back", async () => {
+  const { harness, cells } = await testS4();
+  const result = await harness.send("runTest", {});
+  assert.ok(result.changed, JSON.stringify(result.steps, null, 2));
+  assert.ok(result.restored, JSON.stringify(result.steps, null, 2));
+  assert.strictEqual(harness.posted.length, 2);
+  assert.strictEqual(harness.posted[0].body.shift_time, "851", "to 7:00am");
+  assert.strictEqual(harness.posted[1].body.shift_time, "850", "and back to 06:58am");
+  assert.strictEqual(mojinOn(cells, "2026-10-31").time, "65800");
+  assert.strictEqual(mojinOn(cells, "2026-10-30").time, "65800", "no other day touched");
+  const state = await harness.send("getState");
+  const ui = loadUi(state);
+  ui.render(state);
+  assert.match(ui.$("testResult").textContent, /Posting works/);
+});
+
+test("a change S4 ignores is reported, and nothing is left changed", async () => {
+  const { harness, cells } = await testS4({ ignore: () => true });
+  const result = await harness.send("runTest", {});
+  assert.strictEqual(result.changed, false);
+  assert.strictEqual(result.restored, true);
+  assert.strictEqual(harness.posted.length, 1, "nothing to put back, so nothing more sent");
+  assert.strictEqual(mojinOn(cells, "2026-10-31").time, "65800");
+});
+
+test("a day that is not put back is shouted about, with the fix", async () => {
+  const { harness } = await testS4({ ignore: (n) => n === 2 });
+  const result = await harness.send("runTest", {});
+  assert.ok(result.changed);
+  assert.strictEqual(result.restored, false);
+  const state = await harness.send("getState");
+  assert.ok(state.log.some((e) => e.level === "error" && /NOT put back/.test(e.message)));
+  const ui = loadUi(state);
+  ui.render(state);
+  assert.match(ui.$("testResult").textContent, /set mojin\.t on 31-Oct-2026 to 06:58am-02:58pm by hand/);
+});
+
+test("the one-row test needs writing unlocked", async () => {
+  const { harness } = await testS4({ allowWrites: false });
+  const reply = await harness.send("runTest", {});
+  assert.match(reply.error, /locked/);
+  assert.strictEqual(harness.posted.length, 0);
+});
+
+test("the one-row test only uses a day somebody is working", async () => {
+  const { harness, cells } = await testS4();
+  mojinOn(cells, "2026-10-20").cat_id = "3";
+  await harness.send("probe");
+  const reply = await harness.send("planTest", { tech: "mojin.t", date: "2026-10-20" });
+  assert.match(reply.error, /not on a working shift/);
+  assert.match(reply.error, /OFF/);
+});

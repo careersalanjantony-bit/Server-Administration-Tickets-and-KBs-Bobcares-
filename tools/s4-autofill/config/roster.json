@@ -159,9 +159,9 @@
       "display_name": "kumar.c",
       "email": "kumar.c@poornam.com",
       "division": "SA",
-      "active": true,
+      "active": false,
       "joined": null,
-      "left": null,
+      "left": "2026-10-01",
       "tags": [],
       "fixed_off": [
         "Saturday",

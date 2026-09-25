@@ -11,6 +11,7 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
+from .holidays import S4_HOLIDAYS
 from .model import Roster, ShiftConfig, Tech
 from .monthcal import s4_date, weekday_name
 from .scheduler import Plan
@@ -128,7 +129,9 @@ def write_summary_csv(plan: Plan, config: ShiftConfig, roster: Roster, path: Pat
     """The bottom-of-month summary S4 shows: days per slot, then offs and leaves."""
     path.parent.mkdir(parents=True, exist_ok=True)
     slots = config.slots
-    categories = config.leave_categories
+    # Holiday codes (GJ, VJ, …) are counted under PH, as one column, rather
+    # than eighteen mostly-empty ones.
+    categories = [c for c in config.leave_categories if c not in S4_HOLIDAYS]
     per_tech = plan.by_tech()
     with open(path, "w", newline="") as f:
         w = csv.writer(f)
@@ -148,7 +151,8 @@ def write_summary_csv(plan: Plan, config: ShiftConfig, roster: Roster, path: Pat
                     slot_counts[a.slot_id] += 1
                     working += 1
                 else:
-                    cat_counts[a.category] = cat_counts.get(a.category, 0) + 1
+                    key = "PH" if a.category in S4_HOLIDAYS else a.category
+                    cat_counts[key] = cat_counts.get(key, 0) + 1
             w.writerow(
                 [number, tech.display_name, tech.division, "-".join(tech.fixed_off)]
                 + [slot_counts[s.id] or "" for s in slots]

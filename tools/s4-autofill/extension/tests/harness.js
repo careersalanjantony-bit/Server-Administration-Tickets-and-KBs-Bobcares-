@@ -379,6 +379,10 @@ function load(options = {}) {
         // a page read, not a post
         const page = options.pages && options.pages[url];
         fetched.push(url);
+        // A live S4: the grid is drawn from its current cells every time.
+        if (options.live && /action=view_shift/.test(url)) {
+          return { status: 200, text: async () => "LIVEGRID" };
+        }
         // A session that has run out: every page is S4's login form.
         if (options.loggedOut) {
           return {
@@ -397,6 +401,7 @@ function load(options = {}) {
       }
       const body = Object.fromEntries(new URLSearchParams(init.body));
       posted.push({ url, body });
+      if (options.live && options.live.apply) options.live.apply(body, posted.length);
       const reply = respond(body, posted.length);
       return { status: reply.status, text: async () => reply.text };
     },
@@ -404,6 +409,7 @@ function load(options = {}) {
       return {
         parseFromString(html) {
           if (html === "LOGIN") return makeLoginDocument();
+          if (html === "LIVEGRID") return makeGridDocument([], options.live.cells);
           if (html.startsWith("EDITOR ")) {
             const params = new URL(html.slice(7)).searchParams;
             return (options.editor || makeEditorDocument)(params, techIds);

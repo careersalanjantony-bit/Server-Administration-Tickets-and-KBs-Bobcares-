@@ -161,6 +161,21 @@ function renderResults(run) {
   });
 }
 
+/** One line on how the one-row test went, and what to do if it did not. */
+function describeTest(test) {
+  if (!test) return "";
+  const head = `${test.tech} on ${test.date}: ${test.from} → ${test.to} → back.`;
+  if (test.changed && test.restored) {
+    return `${head} S4 took the change and it was put back. Posting works.`;
+  }
+  if (!test.restored) {
+    return `${head} The day was NOT put back — set ${test.tech} on ${test.date} to ` +
+      `${test.from} by hand in S4. Copy diagnostics for what S4 said.`;
+  }
+  return `${head} S4 did not show the change, so nothing was written; the day is as it ` +
+    "was. Copy diagnostics for what S4 said.";
+}
+
 function renderStatus(run, busy, probing) {
   const box = $("status");
   const pct = run.total ? Math.round((run.index / run.total) * 100) : 0;
@@ -299,6 +314,11 @@ function render(state) {
   $("fillReason").textContent = why.length ? why.join(" · ") : "";
   $("dryRun").title = $("dryRun").disabled ? why.join(" · ") : "Builds the posts without sending them";
   $("live").title = $("live").disabled ? why.join(" · ") : "";
+  $("testOne").disabled = busy || !mapping || !rowsRead(mapping) || !allowed;
+  $("testOne").title = $("testOne").disabled
+    ? "needs the shift form found, the grid read, and writing unlocked"
+    : "";
+  $("testResult").textContent = describeTest(state.lastTest);
   $("probe").disabled = busy || !plan;
   $("probe").textContent = state.probing ? "Looking…" : "Find the shift form";
   $("planFile").disabled = busy;
@@ -416,6 +436,26 @@ $("live").addEventListener("click", async () => {
 $("build").textContent = "v" + browser.runtime.getManifest().version;
 
 refresh();
+});
+
+$("testOne").addEventListener("click", async () => {
+  const args = { tech: $("testTech").value.trim(), date: $("testDate").value.trim() };
+  const pick = await call("planTest", args);
+  if (!pick) return;
+  const confirmed = window.confirm(
+    `Test on ${pick.tech}, ${pick.date} (row ${pick.calId}):\n\n` +
+      `S4 now: ${pick.from}\n` +
+      `1. change it to ${pick.to}\n` +
+      "2. read S4 back to check it saved\n" +
+      `3. change it back to ${pick.from}\n` +
+      "4. read S4 back to check it is restored\n\n" +
+      "This writes to the live roster twice. Continue?"
+  );
+  if (!confirmed) return;
+  $("testResult").textContent = "Testing…";
+  $("testOne").disabled = true;
+  await call("runTest", args);
+  refresh();
 });
 
 $("stop").addEventListener("click", async () => {
