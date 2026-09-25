@@ -280,6 +280,12 @@ def write_extension_plan(plan: Plan, config: ShiftConfig, roster: Roster, path: 
         })
     document = {
         "month": plan.month,
+        # Carried so the extension can say "this month has gaps" before it
+        # fills anything, rather than the gaps only existing in a terminal.
+        "issues": {
+            "shortfalls": [s.describe() for s in plan.shortfalls],
+            "warnings": list(plan.warnings),
+        },
         "generated": dt.datetime.now().isoformat(timespec="seconds"),
         "team": config.team.get("name", ""),
         "team_id": config.team.get("s4_team_id"),

@@ -279,3 +279,23 @@ test("the probe records which tab it settled on", async () => {
   assert.ok(Array.isArray(state.mapping.looked));
   assert.ok(state.mapping.looked.length >= 1);
 });
+
+// ------------------------------------------------- guarding the wrong month
+
+test("the month written comes from the dates, not the page being viewed", async () => {
+  // The person may well be looking at a different month in S4. What lands is
+  // decided by sdate/edate in each post, which must come from the plan.
+  const { harness } = await ready();
+  await harness.send("startRun", { dryRun: false });
+  assert.ok(harness.posted.every((p) => /-Oct-2026$/.test(p.body.sdate)));
+  assert.ok(harness.posted.every((p) => /-Oct-2026$/.test(p.body.edate)));
+});
+
+test("a plan carries its own coverage shortfalls", async () => {
+  const plan = samplePlan({
+    issues: { shortfalls: ["2026-12-06 e1500: need 2, got 1"], warnings: [] },
+  });
+  const harness = load({ techIds: TECHS });
+  const state = await harness.send("setPlan", { plan });
+  assert.deepStrictEqual(state.plan.issues.shortfalls.length, 1);
+});

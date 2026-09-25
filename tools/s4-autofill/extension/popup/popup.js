@@ -37,6 +37,38 @@ function describePlan(plan) {
   return `${rows} shift blocks · ${techs} techs · ${days} tech-days`;
 }
 
+/** The month an S4 url is showing, e.g. ...&y=2026&m=12 -> "2026-12". */
+function monthOfUrl(url) {
+  const year = /[?&]y=(\d{4})\b/.exec(url || "");
+  const month = /[?&]m=(\d{1,2})\b/.exec(url || "");
+  if (!year || !month) return null;
+  return `${year[1]}-${String(month[1]).padStart(2, "0")}`;
+}
+
+function planNotes(plan, mapping) {
+  if (!plan) return [];
+  const notes = [];
+  const shortfalls = (plan.issues && plan.issues.shortfalls) || [];
+  if (shortfalls.length) {
+    notes.push(
+      `This plan has ${shortfalls.length} coverage shortfall(s) — ` +
+        `${shortfalls[0]}${shortfalls.length > 1 ? ", …" : ""}. ` +
+        "Those days go in short-staffed."
+    );
+  }
+  // The dates in each post decide which month is written, not the page you are
+  // looking at — but a mismatch usually means the wrong plan got loaded.
+  const showing = mapping && monthOfUrl(mapping.tabUrl);
+  if (showing && plan.month && showing !== plan.month) {
+    notes.push(
+      `The S4 page it found is showing ${showing}, but this plan is for ` +
+        `${plan.month}. Each post carries its own dates, so ${plan.month} is ` +
+        "what would be written — check that is the one you meant."
+    );
+  }
+  return notes;
+}
+
 function describeMapping(mapping, plan) {
   if (!mapping) return "Not read yet.";
   const slots = Object.keys(mapping.shiftTimeValues || {}).length;
@@ -126,8 +158,9 @@ function render(state) {
       `${run.index} of ${run.total}` + (run.dryRun ? " — dry run" : "") +
       (busy ? "" : " — finished");
   }
-  $("runNote").hidden = !run.note;
-  $("runNote").textContent = run.note || "";
+  const notes = planNotes(plan, mapping).concat(run.note ? [run.note] : []);
+  $("runNote").hidden = notes.length === 0;
+  $("runNote").textContent = notes.join("  ");
 
   renderResults(run);
 

@@ -46,6 +46,17 @@ Then, in Firefox:
 6. **Fill S4 for real** — asks you to confirm, then posts, with a progress bar
    and a Stop button.
 
+### Which month gets written
+
+The dates in each post decide that, not the page you are looking at. A post
+carries its own `sdate`/`edate`, so loading December's plan writes December
+even while you are looking at October. If the page it found is showing a
+different month from the plan, the popup says so — that usually means the
+wrong plan got loaded.
+
+This is also why a dry run is safe on any month: it builds the bodies and sends
+none of them.
+
 ### Which page to be on
 
 It does not matter much, which is deliberate. S4 spreads this over two windows:
@@ -113,13 +124,14 @@ It writes to a live roster, so:
 node --test
 ```
 
-26 tests. They load the real `background.js` and `content/s4page.js` into a VM
+28 tests. They load the real `background.js` and `content/s4page.js` into a VM
 with a stand-in `browser` API and a form shaped like S4's, and cover the things
 that would actually corrupt a roster: that duration fields are never mistaken
 for the clock fields, that midnight and noon do not post as hour zero, that a
 dry run sends nothing, that an incomplete mapping blocks a live run, that error
-pages are not counted as successes, that Stop actually stops, and that both of
-S4's page layouts produce byte-identical POST bodies.
+pages are not counted as successes, that Stop actually stops, that the month
+written comes from the plan's dates rather than the page, and that both of S4's
+page layouts produce byte-identical POST bodies.
 
 The real October plan — 534 blocks, 868 tech-days — runs through the harness
 with all 15 shift times, all 28 staff and all 12 fields mapped, and nothing
