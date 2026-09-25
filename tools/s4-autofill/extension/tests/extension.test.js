@@ -1210,3 +1210,120 @@ test("a dropdown of team admins does not become the staff field", () => {
   const matched = harness.S4Mapping.matchOptions(forms, plan);
   assert.strictEqual(matched.fields.staff, "cmbTeam[]", "the bigger list should name it");
 });
+
+// ----------------------------------------- a post has to carry the whole form
+// The form has 18 fields the mapping knows nothing about, cal_id and tid among
+// them. Sending only the understood ones leaves S4 with no idea which row is
+// being changed.
+
+const RENDERED = [
+  {
+    name: "change_shift",
+    action: "index.php?action=chkshift",
+    inputs: [
+      { name: "cal_id", type: "hidden", value: "98765" },
+      { name: "uid", type: "hidden", value: "2431" },
+      { name: "tid", type: "hidden", value: "6" },
+      { name: "sdate", type: "hidden", value: "2026-10-01" },
+      { name: "edate", type: "hidden", value: "2026-10-31" },
+      { name: "view", type: "hidden", value: "month" },
+      { name: "startday", type: "hidden", value: "01" },
+      { name: "startmonth", type: "hidden", value: "10" },
+      { name: "startyear", type: "hidden", value: "2026" },
+      { name: "endday", type: "hidden", value: "01" },
+      { name: "endmonth", type: "hidden", value: "10" },
+      { name: "endyear", type: "hidden", value: "2026" },
+      { name: "hour", type: "text", value: "" },
+      { name: "minute", type: "text", value: "" },
+      { name: "ampm", type: "radio", value: "am" },
+      { name: "duration_h", type: "text", value: "" },
+      { name: "duration_m", type: "text", value: "" },
+      { name: "comment", type: "textarea", value: "" },
+      { name: "countdown", type: "text", value: "200" },
+      { name: "secret", type: "password", value: "hunter2" },
+      { name: "Edit", type: "submit", value: "Edit" },
+    ],
+    selects: [{ name: "cat", options: [] }, { name: "shift_time", options: [] }],
+  },
+];
+
+function renderedMapping(harness) {
+  return {
+    fields: Object.assign(harness.S4Mapping.suggestFields(RENDERED, "shift"), {
+      shift_time: "shift_time",
+      category: "cat",
+    }),
+    baseFields: harness.S4Mapping.baseFieldsOf(RENDERED, "shift"),
+    shiftTimeValues: { s0: "614" },
+    categoryValues: { W: "W" },
+    staffValues: { "mojin.t": "2431" },
+  };
+}
+
+const ROW = {
+  tech_id: "mojin.t", category: "W", slot_id: "s0",
+  shift_time: "10:58pm-06:58am", start_date: "01-Oct-2026",
+  end_date: "03-Oct-2026", time: "22:58", duration_min: 480, reason: "autofill",
+};
+
+test("the hidden fields the form rendered are handed back", () => {
+  const harness = load({ techIds: TECHS });
+  const body = harness.S4Mapping.buildBody(ROW, renderedMapping(harness));
+  assert.strictEqual(body.cal_id, "98765", "without this S4 cannot tell which row");
+  assert.strictEqual(body.tid, "6");
+  assert.strictEqual(body.view, "month");
+  assert.strictEqual(body.countdown, "200");
+  assert.strictEqual(body.Edit, "Edit", "php often tests for the submit button");
+});
+
+test("a password rendered on the form is never posted back", () => {
+  const harness = load({ techIds: TECHS });
+  const body = harness.S4Mapping.buildBody(ROW, renderedMapping(harness));
+  assert.ok(!("secret" in body), "must not echo a password field");
+});
+
+test("the split date parts are filled from the plan, not left as rendered", () => {
+  const harness = load({ techIds: TECHS });
+  const body = harness.S4Mapping.buildBody(ROW, renderedMapping(harness));
+  assert.strictEqual(body.startday, "01");
+  assert.strictEqual(body.startmonth, "10");
+  assert.strictEqual(body.startyear, "2026");
+  assert.strictEqual(body.endday, "03", "the end date moves with the block");
+});
+
+test("dates are sent in the format S4 rendered them in", () => {
+  const harness = load({ techIds: TECHS });
+  const body = harness.S4Mapping.buildBody(ROW, renderedMapping(harness));
+  // The hidden sdate came back as 2026-10-01, so ISO is what it wants.
+  assert.strictEqual(body.sdate, "2026-10-01");
+  assert.strictEqual(body.edate, "2026-10-03");
+});
+
+test("a form rendering dd-Mon-yyyy gets dd-Mon-yyyy back", () => {
+  const harness = load({ techIds: TECHS });
+  const mapping = renderedMapping(harness);
+  mapping.baseFields.sdate = "01-Oct-2026";
+  mapping.baseFields.edate = "31-Oct-2026";
+  const body = harness.S4Mapping.buildBody(ROW, mapping);
+  assert.strictEqual(body.sdate, "01-Oct-2026");
+  assert.strictEqual(body.edate, "03-Oct-2026");
+});
+
+test("nothing on the form is left out of the post", () => {
+  const harness = load({ techIds: TECHS });
+  const body = harness.S4Mapping.buildBody(ROW, renderedMapping(harness));
+  const onForm = RENDERED[0].inputs
+    .filter((i) => i.type !== "password")
+    .map((i) => i.name)
+    .concat(RENDERED[0].selects.map((s) => s.name));
+  const missing = [...new Set(onForm)].filter((name) => !(name in body));
+  assert.deepStrictEqual(missing, [], `not sent: ${missing.join(", ")}`);
+});
+
+test("splitDate handles S4's date format", () => {
+  const harness = load({ techIds: TECHS });
+  assert.deepStrictEqual({ ...harness.S4Mapping.splitDate("03-Oct-2026") }, {
+    day: "03", month: "10", year: "2026", iso: "2026-10-03",
+  });
+  assert.strictEqual(harness.S4Mapping.splitDate("nonsense"), null);
+});

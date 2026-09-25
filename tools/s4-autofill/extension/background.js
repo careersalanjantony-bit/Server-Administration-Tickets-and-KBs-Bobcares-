@@ -687,6 +687,7 @@ const handlers = {
       state.mapping = {
         fields,
         borrowedFields: borrowed,
+        baseFields: S4Mapping.baseFieldsOf(chosen.forms, plan.form_name || "shift"),
         shiftTimeValues,
         categoryValues,
         staffValues,
@@ -799,6 +800,13 @@ const handlers = {
         looked: mapping.looked,
         contributed: mapping.contributed,
         borrowedFields: mapping.borrowedFields,
+        baseFields: mapping.baseFields,
+        // Exactly what one post would carry, which is the thing to check
+        // before anything is written.
+        sampleBody:
+          plan && plan.assignments && plan.assignments.length
+            ? S4Mapping.buildBody(plan.assignments[0], mapping)
+            : null,
         // Every page read, with the raw field names and dropdown options of
         // each. A mismatch always comes down to these, and S4 spreads the
         // pieces over several pages, so one page's worth is not enough.

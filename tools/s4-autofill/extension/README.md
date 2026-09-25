@@ -110,6 +110,19 @@ The extension therefore scrapes calendar ids out of the grid's markup and pins
 them onto that url. If it cannot find one, open a shift in S4 and paste the
 editor's address into the editor page box — that address carries a `cal_id`.
 
+### A post carries the whole form
+
+`change_shift` has eighteen fields the mapping knows nothing about — `cal_id`,
+`tid`, `view`, `prv_caldate`, the split date parts, `countdown`, the `Edit`
+button. A classic PHP form expects everything it rendered to come back, and
+`cal_id` in particular is how S4 knows which row is being changed. So a post
+starts from the form's own hidden values and overwrites only the fields being
+set. Password fields are never echoed.
+
+Dates go back in the shape S4 rendered them: the visible box shows
+`01-Oct-2026` while the hidden one holds `2026-10-01`, and guessing wrong
+writes the wrong day silently.
+
 ### S4 spreads the form over several pages
 
 There is no single page with everything on it. In practice:
@@ -230,7 +243,7 @@ It writes to a live roster, so:
 node --test
 ```
 
-91 tests. They load the real `background.js` and `content/s4page.js` into a VM
+98 tests. They load the real `background.js` and `content/s4page.js` into a VM
 with a stand-in `browser` API and a form shaped like S4's, and cover the things
 that would actually corrupt a roster: that duration fields are never mistaken
 for the clock fields, that midnight and noon do not post as hour zero, that a
@@ -261,6 +274,12 @@ left over.
 ---
 
 ## What has not been tested
+
+**A live post.** The field names and dropdown values come from a real probe,
+but no body has ever been accepted by S4 — the one thing still unknown is
+whether `cal_id` can be reused across rows or has to name each one. Do the dry
+run, read the body it prints, and check it against what S4 shows when you edit
+a shift by hand.
 
 The real S4. I have never been able to reach it, so the form here is a stand-in
 built from screenshots of the edit popup. The field names and dropdown values

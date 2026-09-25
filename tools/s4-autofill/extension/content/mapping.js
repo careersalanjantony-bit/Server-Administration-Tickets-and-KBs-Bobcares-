@@ -131,8 +131,16 @@
   // hold the value: "log" was binding to shift_comment, a group of seven radio
   // buttons, simply because the name contains "comment".
   const FIELD_HINTS = [
-    ["start_date", ["sdate", "startdate", "start"]],
-    ["end_date", ["edate", "enddate", "end"]],
+    ["start_date", ["sdate", "startdate"]],
+    ["end_date", ["edate", "enddate"]],
+    // S4 carries the date twice: once whole, once split into three. Which one
+    // it reads is its business — both are filled so it does not matter.
+    ["start_day", ["startday"]],
+    ["start_month", ["startmonth"]],
+    ["start_year", ["startyear"]],
+    ["end_day", ["endday"]],
+    ["end_month", ["endmonth"]],
+    ["end_year", ["endyear"]],
     // S4 spells these duration_h / duration_m — note that "duration_h" does
     // not contain "dur_h", which is why they went unmatched for so long.
     ["duration_hours", ["duration_h", "dur_hr", "dur_h", "durationhour", "durhour"]],
@@ -185,6 +193,23 @@
     return fields;
   }
 
+  const MONTHS_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                        "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+  /** "01-Oct-2026" -> {day: "01", month: "10", year: "2026"} */
+  function splitDate(text) {
+    const parts = String(text || "").split("-");
+    if (parts.length !== 3) return null;
+    const month = MONTHS_SHORT.indexOf(parts[1]);
+    if (month < 0) return null;
+    return {
+      day: parts[0],
+      month: String(month + 1).padStart(2, "0"),
+      year: parts[2],
+      iso: `${parts[2]}-${String(month + 1).padStart(2, "0")}-${parts[0]}`,
+    };
+  }
+
   /** Build the form-encoded body for one planned shift block. */
   function buildBody(payload, mapping) {
     const fields = mapping.fields || {};
@@ -196,14 +221,38 @@
     const durationHours = Math.floor(duration / 60);
     const durationMinutes = duration % 60;
 
-    const body = {};
+    // Start from the form's own hidden inputs and their values. A classic PHP
+    // form expects everything it rendered to come back; sending only the
+    // fields we understand drops cal_id, tid and the rest, and S4 has no way
+    // to tell which row is being changed.
+    const body = Object.assign({}, mapping.baseFields || {});
     const put = (field, value) => {
       if (fields[field]) body[fields[field]] = value;
     };
     put("staff", (mapping.staffValues || {})[payload.tech_id] || payload.tech_id);
     put("category", (mapping.categoryValues || {})[payload.category] || payload.category);
-    put("start_date", payload.start_date);
-    put("end_date", payload.end_date);
+    const from = splitDate(payload.start_date);
+    const to = splitDate(payload.end_date);
+    // Send the date in whatever shape S4 itself rendered. The visible box
+    // shows 01-Oct-2026 while the hidden one holds 2026-10-01, and guessing
+    // wrong silently writes the wrong day.
+    const asRendered = (field, plain, parsed) => {
+      const existing = (mapping.baseFields || {})[fields[field]];
+      const iso = /^\d{4}-\d{2}-\d{2}$/.test(existing || "");
+      return iso && parsed ? parsed.iso : plain;
+    };
+    put("start_date", asRendered("start_date", payload.start_date, from));
+    put("end_date", asRendered("end_date", payload.end_date, to));
+    if (from) {
+      put("start_day", from.day);
+      put("start_month", from.month);
+      put("start_year", from.year);
+    }
+    if (to) {
+      put("end_day", to.day);
+      put("end_month", to.month);
+      put("end_year", to.year);
+    }
     put(
       "shift_time",
       (mapping.shiftTimeValues || {})[payload.slot_id || ""] || payload.shift_time
@@ -217,6 +266,28 @@
     put("log", payload.reason || "");
     Object.assign(body, mapping.constantFields || {});
     return body;
+  }
+
+  /**
+   * The hidden values a form rendered, to be handed straight back.
+   *
+   * Passwords are never taken, and the submit button is kept because PHP
+   * commonly tests for it to decide the form was submitted at all.
+   */
+  function baseFieldsOf(forms, formName) {
+    const form =
+      (forms || []).find((f) => f.name === formName) || (forms || [])[0] || { inputs: [] };
+    const base = {};
+    (form.inputs || []).forEach((input) => {
+      const type = (input.type || "text").toLowerCase();
+      if (!input.name || type === "password") return;
+      if (type === "hidden" || type === "submit") {
+        base[input.name] = input.value || "";
+      } else if (input.value) {
+        base[input.name] = input.value;
+      }
+    });
+    return base;
   }
 
   /** Which mappings are still missing before a live run is safe. */
@@ -240,7 +311,10 @@
     return { fields: missing, slots: unmappedSlots, categories: unmappedCategories };
   }
 
-  const api = { timeKey, clean, matchOptions, suggestFields, buildBody, missingMapping };
+  const api = {
+    timeKey, clean, matchOptions, suggestFields, buildBody, missingMapping,
+    splitDate, baseFieldsOf,
+  };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.S4Mapping = api;
 })(typeof globalThis !== "undefined" ? globalThis : this);
