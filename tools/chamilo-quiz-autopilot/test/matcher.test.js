@@ -50,6 +50,53 @@ test('parses other formats', () => {
   assert.equal(M.parseKey('[{"q":"a question","a":"an answer"}]').length, 1);
 });
 
+test('parses numbered bold questions with "Answer:" lines', () => {
+  const e = M.parseKey(
+    [
+      '## Quiz - Questions & Answers',
+      '',
+      '**1. Which plan provides assistance with AnyDesk?**  ',
+      '**Answer:** Dedicated Engineer Session or PLSM',
+      '',
+      '**2. When verifying MySQL is fully stopped, which is the correct approach**  ',
+      '**Answer:** Use `pstree` and `ps aux | egrep "mysql|mariadb"`',
+      '',
+      '3. Answer on the next line',
+      'Answer:',
+      'All of the above',
+      '',
+      '**4. Which plan provides assistance with AnyDesk?**',
+      '**Answer:** Dedicated Engineer Session or PLSM',
+    ].join('\n')
+  );
+  assert.deepEqual(
+    e.map((x) => [x.q, x.a]),
+    [
+      ['Which plan provides assistance with AnyDesk?', 'Dedicated Engineer Session or PLSM'],
+      ['When verifying MySQL is fully stopped, which is the correct approach', 'Use pstree and ps aux | egrep "mysql|mariadb"'],
+      ['Answer on the next line', 'All of the above'],
+    ]
+  );
+});
+
+test('pauses when a second key entry for the question accepts two options', () => {
+  const key = M.parseKey(
+    [
+      'Correct usage to run a PHP script in cPanel | Use /usr/local/bin/php; either directly as the cPanel user or via sudo -u',
+      'Correct usage to run a PHP script like /home/u/cli/task.php | /usr/local/bin/php ... OR sudo -u <user> bash -c \'/usr/local/bin/php ...\'',
+    ].join('\n')
+  );
+  const r = M.solve(
+    {
+      text: 'What is the correct usage to run a PHP script in a cPanel website?',
+      options: ['php x.php', '/usr/local/bin/php x.php', "sudo -u user bash -c '/usr/local/bin/php x.php'", '/usr/bin/php x.php'],
+      multi: false,
+    },
+    key
+  );
+  assert.equal(r.confidence, 'low');
+});
+
 test('matches the screenshot question to "All of the above" even with shuffled options', () => {
   const r = M.solve(
     {

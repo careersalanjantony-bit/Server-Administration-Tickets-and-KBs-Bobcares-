@@ -29,7 +29,7 @@
       .replace(/`/g, '')
       .replace(/\s+/g, ' ')
       .trim()
-      .replace(/^["'\u201c\u201d\u2018\u2019]+|["'\u201c\u201d\u2018\u2019]+$/g, '')
+      .replace(/^["'\u201c\u2018](.*)["'\u201d\u2019]$/, '$1') // only quotes wrapping the whole text
       .trim();
   }
 
@@ -269,6 +269,16 @@
         reasons.push('Another key entry ("' + clean(rival.entry.q) + '") points to a different option.');
       }
     }
+    if (confident) {
+      // A second key entry for this same question that accepts two of the options ("A OR B").
+      const shaky = ranked.find(
+        (r) => r !== w && r.qs >= 0.4 && r.qs >= w.qs - 0.45 && r.second >= 0.5 && r.best - r.second < 0.12
+      );
+      if (shaky) {
+        confident = false;
+        reasons.push('Your key accepts more than one of these options ("' + clean(shaky.entry.a) + '").');
+      }
+    }
 
     return Object.assign(base, {
       picks: [pick],
@@ -347,6 +357,7 @@
    *   Question | Answer
    *   Question => Answer   (also ->, ::, or a TAB)
    *   Q: Question  /  A: Answer          (on separate lines)
+   *   **1. Question**  /  **Answer:** x  (numbered question, "Answer:" line; bold is ignored)
    *   Question?  /  Answer               (question line ending in "?", answer on the next line)
    *   JSON: [{"q": "...", "a": "..."}]  or  {"question": "answer"}
    */
@@ -354,7 +365,7 @@
     const entries = [];
     const seen = new Set();
     const push = (q, a) => {
-      q = clean(q).replace(/^(?:q(?:uestion)?\s*\d*\s*[:.)]\s*)/i, '');
+      q = clean(q).replace(/^(?:q(?:uestion)?\s*\d*\s*[:.)]|\d+\s*[.)])\s*/i, '');
       a = clean(a).replace(/^(?:a(?:ns(?:wer)?)?\s*[:=]\s*)/i, '');
       if (!q || !a) return;
       const id = norm(q) + '\u0000' + norm(a);
@@ -380,49 +391,84 @@
       }
     }
 
+    const Q_RE = /^(?:(?:q|question)\s*\d*\s*[:.)]|\d+\s*[.)])\s*(.+)$/i; // "Q: ..", "Question 3: ..", "3. .."
+    const A_RE = /^(?:a|ans|answer|correct answer|right answer|correct)\s*[:=]\s*(.*)$/i;
+    const isHeader = (p) =>
+      /^(#|no\.?|question)$/i.test(p[0]) || (/question/i.test(p[0]) && p[0].length < 20 && /answer/i.test(p[1]));
+
+    // "question | answer" or "question => answer" on one line; null if the line is not a pair.
+    const pairOf = (s) => {
+      if (s.includes('|')) {
+        let cells = splitCells(s, true).map(clean).filter((c) => c !== '');
+        if (cells.length > 2 && /^#?\d+[.)]?$/.test(cells[0])) cells = cells.slice(1); // "# / 1" column
+        if (cells.length >= 2) return cells;
+      }
+      const sep = SEPARATORS.find((x) => s.includes(x));
+      if (sep) {
+        const i = s.indexOf(sep);
+        return [s.slice(0, i), s.slice(i + sep.length)];
+      }
+      return null;
+    };
+
     let pendingQ = null;
+    let loose = false; // pending question may take a plain next line as its answer
+    let wantAnswer = false; // saw a bare "Answer:" - the text is on the next line
+    const setQ = (q, isLoose) => {
+      pendingQ = q;
+      loose = isLoose;
+      wantAnswer = false;
+    };
+    const take = (a) => {
+      push(pendingQ, a);
+      setQ(null, false);
+    };
+
     for (const raw of t.split('\n')) {
       const line = raw.trim();
-      if (!line || /^```/.test(line)) continue;
+      if (!line || /^```/.test(line) || /^#{1,6}\s/.test(line) || /^([-*_])\1{2,}$/.test(line)) continue;
+      const plain = line.replace(/\*\*|__/g, '').trim(); // "**Answer:** x" -> "Answer: x"
       let m;
 
-      if (line.includes('|')) {
-        let cells = splitCells(line, true).map(clean).filter((c) => c !== '');
-        if (!cells.length || cells.every((c) => /^:?-{2,}:?$/.test(c))) continue; // |---|---|
-        if (cells.length > 2 && /^#?\d+[.)]?$/.test(cells[0])) cells = cells.slice(1); // "# / 1" column
-        if (cells.length >= 2) {
-          if (/^(#|no\.?|question)$/i.test(cells[0]) || (/question/i.test(cells[0]) && /answer/i.test(cells[1]))) continue; // header
-          push(cells[0], cells[1]);
-          pendingQ = null;
-          continue;
+      if (pendingQ && wantAnswer) {
+        take(plain);
+        continue;
+      }
+      if (pendingQ && (m = plain.match(A_RE))) {
+        if (m[1].trim()) take(m[1]);
+        else wantAnswer = true;
+        continue;
+      }
+
+      if (line.startsWith('|')) {
+        const pair = pairOf(line);
+        if (pair && !isHeader(pair) && !pair.every((c) => /^:?-{2,}:?$/.test(c))) push(pair[0], pair[1]);
+        setQ(null, false);
+        continue;
+      }
+
+      if ((m = plain.match(Q_RE))) {
+        const pair = pairOf(m[1]);
+        if (pair && !isHeader(pair)) {
+          push(pair[0], pair[1]);
+          setQ(null, false);
+        } else {
+          setQ(m[1], false);
         }
-      }
-
-      const sep = SEPARATORS.find((s) => line.includes(s));
-      if (sep) {
-        const i = line.indexOf(sep);
-        push(line.slice(0, i), line.slice(i + sep.length));
-        pendingQ = null;
         continue;
       }
 
-      if ((m = line.match(/^(?:q|question)\s*\d*\s*[:.)]\s*(.+)$/i))) {
-        pendingQ = m[1];
+      const pair = pairOf(line);
+      if (pair) {
+        if (!isHeader(pair)) push(pair[0], pair[1]);
+        setQ(null, false);
         continue;
       }
-      if (pendingQ && (m = line.match(/^(?:a|ans|answer|correct answer|correct)\s*[:=]\s*(.+)$/i))) {
-        push(pendingQ, m[1]);
-        pendingQ = null;
+      if (/\?$/.test(plain)) {
+        setQ(plain, true);
         continue;
       }
-      if (/\?$/.test(line) && !/^#/.test(line)) {
-        pendingQ = line;
-        continue;
-      }
-      if (pendingQ && !/^#/.test(line)) {
-        push(pendingQ, line);
-        pendingQ = null;
-      }
+      if (pendingQ && loose) take(plain);
     }
     return entries;
   }

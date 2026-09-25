@@ -48,6 +48,9 @@ Select correct statements about MySQL recovery => All of the above   (also ->, :
 Q: What to do when you get server add tickets?
 A: All of the above
 
+**1. Which plan provides assistance with AnyDesk?**                  ← numbered question (bold is fine)
+**Answer:** Dedicated Engineer Session or PLSM                       ← "Answer:" line below it
+
 Which plan provides assistance with AnyDesk?                          ← a line ending in "?"
 Dedicated Engineer Session or PLSM                                    ← answer on the next line
 ```
