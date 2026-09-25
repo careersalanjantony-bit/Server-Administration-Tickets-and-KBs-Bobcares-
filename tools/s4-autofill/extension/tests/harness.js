@@ -247,6 +247,26 @@ function makeGridDocument(editUrls, cells) {
   };
 }
 
+/** S4's login page, which is what every fetch gets once the session is gone. */
+function makeLoginDocument() {
+  const inputs = [
+    { name: "username", type: "text", value: "" },
+    { name: "password", type: "password", value: "hunter2" },
+    { name: "login", type: "submit", value: "Login" },
+  ];
+  const form = {
+    getAttribute: (name) =>
+      ({ name: "login", action: "index.php?action=login", method: "POST" }[name] || null),
+    querySelectorAll: (selector) => pick(selector, inputs, []),
+  };
+  return {
+    forms: [form],
+    title: "S4 Login",
+    body: { textContent: "S4  Username  Password  Login" },
+    querySelectorAll: (selector) => pick(selector, inputs, []),
+  };
+}
+
 function makeBrowser(tabs, storage) {
   const store = Object.assign({}, storage || {});
   const listeners = { background: [], content: [] };
@@ -356,6 +376,15 @@ function load(options = {}) {
         // a page read, not a post
         const page = options.pages && options.pages[url];
         fetched.push(url);
+        // A session that has run out: every page is S4's login form.
+        if (options.loggedOut) {
+          return {
+            status: 200,
+            url: "https://s4.inhouse.net/index.php?action=login",
+            redirected: true,
+            text: async () => "LOGIN",
+          };
+        }
         if (page) return { status: 200, text: async () => page };
         // A real row's editor, as popup() would have opened it.
         if (options.editors !== false && /[?&]cal_id=\d+/.test(url) && /chkshift/.test(url)) {
@@ -371,6 +400,7 @@ function load(options = {}) {
     DOMParser: function DOMParserStub() {
       return {
         parseFromString(html) {
+          if (html === "LOGIN") return makeLoginDocument();
           if (html.startsWith("EDITOR ")) {
             const params = new URL(html.slice(7)).searchParams;
             return (options.editor || makeEditorDocument)(params, techIds);

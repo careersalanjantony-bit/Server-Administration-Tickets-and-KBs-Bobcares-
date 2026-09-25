@@ -27,12 +27,8 @@ python3 -m s4autofill plan --month 2026-11 \
 
 # 3. Open out/2026-11/preview.html and read it
 
-# 4. Fill S4 — easiest with the Firefox extension, see below
-
-# 5. Dry run, then for real
-export S4_USER=... S4_PASSWORD=...
-python3 -m s4autofill push --month 2026-11 --verbose
-python3 -m s4autofill push --month 2026-11 --execute
+# 4. Fill S4 with the Firefox extension (see below): load
+#    out/2026-11/plan.json, Find the shift form, Dry run, then Fill S4 for real
 ```
 
 ---
@@ -309,7 +305,7 @@ if there are errors.
 
 ```bash
 python3 -m pytest tests/ -q      # 104 tests, the planner
-cd extension && node --test      # 129 tests, the extension
+cd extension && node --test      # 133 tests, the extension
 ```
 
 ---

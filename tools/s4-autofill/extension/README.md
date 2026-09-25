@@ -276,7 +276,7 @@ It writes to a live roster, so:
 node --test
 ```
 
-129 tests. They load the real `background.js` and `content/s4page.js` into a VM
+133 tests. They load the real `background.js` and `content/s4page.js` into a VM
 with a stand-in `browser` API and a form shaped like S4's, and cover the things
 that would actually corrupt a roster: that duration fields are never mistaken
 for the clock fields, that midnight and noon do not post as hour zero, that a

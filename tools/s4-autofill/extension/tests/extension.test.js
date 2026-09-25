@@ -1786,3 +1786,43 @@ test("a cell with no row id is skipped rather than opened", async () => {
   assert.strictEqual(harness.posted.length, 1, "the other block still goes in");
   assert.ok(!harness.fetched.slice(before).some((url) => /cal_id=&/.test(url)));
 });
+
+// ------------------------------------------------------- an expired session
+// Every page reading as empty looked like S4 had changed. It was the session:
+// each fetch came back as the login form. That has to be said plainly, and a
+// probe that fails must still leave behind what it saw.
+
+test("a logged-out session is named as such", async () => {
+  const harness = load({ techIds: TECHS, noFields: true, selects: false, loggedOut: true });
+  await harness.send("setPlan", { plan: samplePlan() });
+  const reply = await harness.send("probe");
+  assert.ok(reply.error, "should refuse");
+  assert.match(reply.error, /log in again/i);
+  const state = await harness.send("getState");
+  assert.ok(messages(state).includes("S4 answered with its login page"));
+});
+
+test("a probe that finds nothing still leaves what it saw in diagnostics", async () => {
+  const harness = load({ techIds: TECHS, noFields: true, selects: false, loggedOut: true });
+  await harness.send("setPlan", { plan: samplePlan() });
+  await harness.send("probe");
+  const diag = await harness.send("diagnostics");
+  assert.strictEqual(diag.mapping, null);
+  assert.ok(diag.lastProbe, "the failed probe's pages should be there");
+  const login = diag.lastProbe.looked.find((entry) => entry.login);
+  assert.ok(login, JSON.stringify(diag.lastProbe.looked));
+  assert.strictEqual(login.title, "S4 Login");
+  assert.match(login.answeredFrom, /action=login/);
+  assert.ok(!JSON.stringify(diag).includes("hunter2"), "nothing typed is ever carried");
+});
+
+test("a shift page that happens to carry a password box is not a login page", async () => {
+  const { state } = await ready();
+  assert.ok(state.mapping.looked.every((entry) => !entry.login));
+});
+
+test("a successful probe does not repeat itself in diagnostics", async () => {
+  const { harness } = await ready();
+  const diag = await harness.send("diagnostics");
+  assert.strictEqual(diag.lastProbe, null);
+});

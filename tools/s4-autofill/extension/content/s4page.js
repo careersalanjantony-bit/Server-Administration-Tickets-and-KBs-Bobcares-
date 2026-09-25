@@ -233,17 +233,44 @@
     };
   }
 
+  /**
+   * What a page is, in a line: its title, whether it is a login page, and the
+   * start of its visible text. When every page reads as empty, this is what
+   * tells an expired session from a changed layout.
+   */
+  function pageFacts(doc) {
+    const password = doc.querySelectorAll
+      ? Array.from(doc.querySelectorAll("input")).filter(
+          (el) => (el.type || "").toLowerCase() === "password"
+        ).length
+      : 0;
+    const body = doc.body ? doc.body.textContent || "" : "";
+    return {
+      title: (doc.title || "").trim().slice(0, 80),
+      login: password > 0,
+      // Visible text only — input values are not text, so nothing typed leaks.
+      snippet: body.replace(/\s+/g, " ").trim().slice(0, 200),
+    };
+  }
+
   /** Fetch another S4 page with the current session and read its forms. */
   async function probeUrl(url) {
     const response = await fetch(url, { credentials: "same-origin" });
     const html = await response.text();
     const doc = new DOMParser().parseFromString(html, "text/html");
-    return {
-      ok: response.status < 400,
-      status: response.status,
-      forms: probeDocument(doc),
-      grid: gridCells(doc),
-    };
+    return Object.assign(
+      {
+        ok: response.status < 400,
+        status: response.status,
+        // Where S4 actually answered from. A redirect to the login page is the
+        // usual way a session running out shows itself.
+        finalUrl: response.url || url,
+        redirected: !!response.redirected,
+        forms: probeDocument(doc),
+        grid: gridCells(doc),
+      },
+      pageFacts(doc)
+    );
   }
 
   function postUrl(action) {
@@ -301,6 +328,7 @@
           calendarIds: calendarIds(message.idLimit),
           gridSamples: gridSamples(message.sampleLimit),
           grid: gridCells(document),
+          page: pageFacts(document),
         });
       case "probeUrl":
         return probeUrl(message.url).catch((error) => ({

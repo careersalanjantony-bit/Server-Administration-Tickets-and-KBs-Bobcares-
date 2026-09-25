@@ -683,16 +683,26 @@ const handlers = {
         });
       };
 
-      const consider = (url, forms, fetched) => {
+      const consider = (url, forms, fetched, facts) => {
         const read = readPage(forms, plan);
-        looked.push({
+        const about = facts || {};
+        const entry = {
           url,
           fetched: !!fetched,
           requiredFields: read.requiredFields,
           shiftTimes: read.shiftTimes,
           categories: read.categories,
           staff: read.staff,
-        });
+          title: about.title || "",
+          // A password box on a page that offers nothing else is the login
+          // form, not a shift page that happens to carry one.
+          login:
+            !!about.login &&
+            !(read.requiredFields || read.shiftTimes || read.categories || read.staff),
+          snippet: about.snippet || "",
+        };
+        if (about.finalUrl && about.finalUrl !== url) entry.answeredFrom = about.finalUrl;
+        looked.push(entry);
         pages.push({ url, read, forms });
         note("info", fetched ? "Read a linked S4 page" : "Read an open S4 tab", {
           url,
@@ -701,6 +711,12 @@ const handlers = {
           categories: read.categories,
           staff: read.staff,
         });
+        if (entry.login) {
+          note("warn", "S4 answered with its login page", {
+            url,
+            answeredFrom: entry.answeredFrom || url,
+          });
+        }
         return read;
       };
 
@@ -713,7 +729,7 @@ const handlers = {
           note("warn", "Could not read an open S4 tab", { url: tab.url, error: error.message });
           continue;
         }
-        consider(tab.url, reply.forms, false);
+        consider(tab.url, reply.forms, false, reply.page);
         takeGrid(tab.url, reply.grid);
         if (!host) host = tab;
         if (reply.candidates && reply.candidates.length) {
@@ -761,7 +777,7 @@ const handlers = {
             });
             continue;
           }
-          consider(url, reply.forms, true);
+          consider(url, reply.forms, true, reply);
           takeGrid(url, reply.grid);
         }
       }
@@ -803,7 +819,7 @@ const handlers = {
         try {
           const reply = await askTab(host.id, { type: "probeUrl", url });
           if (reply.ok) {
-            consider(url, reply.forms, true);
+            consider(url, reply.forms, true, reply);
             note("ok", "Opened a real shift in the editor", {
               url,
               cal_id: sampleCell.cal_id,
@@ -820,6 +836,21 @@ const handlers = {
         }
       }
 
+      // Kept whatever happens next, so a probe that finds nothing still leaves
+      // behind what it saw. Without this a failed probe left diagnostics empty.
+      state.lastProbe = {
+        at: new Date().toISOString(),
+        looked,
+        grid: {
+          cells: grid.cells.length,
+          popupFound: !!grid.signature,
+          sources: grid.sources,
+          calls: grid.calls,
+          sampleCells: grid.cells.slice(0, 6),
+        },
+        pages: pages.map((entry) => ({ url: entry.url, forms: summariseForms(entry.forms) })),
+      };
+
       if (!pages.length) {
         throw new Error(
           "None of the open S4 tabs could be read. Reload the S4 page so the extension " +
@@ -834,11 +865,24 @@ const handlers = {
           entry.read.categories ||
           entry.read.staff
       );
+      // Every page coming back as the login form means the session ran out,
+      // not that S4 changed. Say that, rather than sending somebody hunting
+      // for an editor window.
+      const logins = looked.filter((entry) => entry.login).length;
+      if (!anything && logins && logins >= looked.filter((e) => e.fetched).length / 2) {
+        note("error", "S4 has logged this browser out", { loginPages: logins });
+        throw new Error(
+          `S4 answered ${logins} of the pages with its login page, so this browser's S4 ` +
+            "session has run out. Reload the S4 tab, log in again, then press Find the " +
+            "shift form."
+        );
+      }
       if (!anything) {
         throw new Error(
           `Looked at ${pages.length} S4 page(s) and found no shift form. Open the shift ` +
             "edit window — the one with Category, Shift Time and Duration on it — or paste " +
-            "its address into the editor page box, then try again."
+            "its address into the editor page box, then try again. Copy diagnostics " +
+            "shows what each page contained."
         );
       }
 
@@ -1076,6 +1120,12 @@ const handlers = {
         // pieces over several pages, so one page's worth is not enough.
         pages: mapping.pages,
       },
+      // What the last probe saw, when it is newer than the mapping — a probe
+      // that fails leaves no mapping, and this is all there is to go on.
+      lastProbe:
+        state.lastProbe && (!mapping || state.lastProbe.at > mapping.probedAt)
+          ? state.lastProbe
+          : null,
       missing: plan && mapping ? S4Mapping.missingMapping(mapping, plan) : null,
       settings: state.settings,
       run: {
