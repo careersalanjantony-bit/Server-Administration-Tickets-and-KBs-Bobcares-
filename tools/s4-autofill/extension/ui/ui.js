@@ -132,6 +132,36 @@ function renderResults(run) {
   });
 }
 
+function renderStatus(run, busy) {
+  const box = $("status");
+  const pct = run.total ? Math.round((run.index / run.total) * 100) : 0;
+  $("bar").style.width = pct + "%";
+
+  let label = "Idle";
+  if (busy) label = run.dryRun ? "Dry run going" : "Filling S4";
+  else if (run.total && run.index >= run.total) label = "Finished";
+  else if (run.total) label = "Stopped";
+  $("statusState").textContent = label;
+
+  const bits = [];
+  if (run.total) bits.push(`${run.index} of ${run.total} (${pct}%)`);
+  if (run.dryRun && run.total) bits.push("nothing was sent");
+  if (run.startedAt) bits.push(`started ${new Date(run.startedAt).toLocaleTimeString()}`);
+  if (!busy && run.finishedAt) {
+    bits.push(`ended ${new Date(run.finishedAt).toLocaleTimeString()}`);
+  }
+  $("statusDetail").textContent = bits.join(" · ");
+
+  // What is in flight right now, so a long run is legible while it happens.
+  $("statusCurrent").textContent = run.current
+    ? `now: ${run.current.tech}  ${run.current.from}→${run.current.to}  ${run.current.shift || ""}`
+    : "";
+
+  // The only way out of a run that says it is going but is not.
+  $("unstick").hidden = !busy;
+  box.classList.toggle("going", busy);
+}
+
 function render(state) {
   if (!state) return;
   const { plan, mapping, run } = state;
@@ -176,14 +206,7 @@ function render(state) {
   $("planFile").disabled = busy;
   $("stop").hidden = !busy;
 
-  $("progressWrap").hidden = !(busy || run.total);
-  if (run.total) {
-    const pct = Math.round((run.index / run.total) * 100);
-    $("bar").style.width = pct + "%";
-    $("progressText").textContent =
-      `${run.index} of ${run.total}` + (run.dryRun ? " — dry run" : "") +
-      (busy ? "" : " — finished");
-  }
+  renderStatus(run, busy);
   const notes = planNotes(plan, mapping).concat(run.note ? [run.note] : []);
   $("runNote").hidden = notes.length === 0;
   $("runNote").textContent = notes.join("  ");
@@ -291,6 +314,11 @@ refresh();
 
 $("stop").addEventListener("click", async () => {
   await call("stopRun");
+});
+
+$("unstick").addEventListener("click", async () => {
+  const state = await call("unstick");
+  if (state) render(state);
 });
 
 $("reset").addEventListener("click", async () => {

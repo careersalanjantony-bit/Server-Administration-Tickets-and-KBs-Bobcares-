@@ -142,8 +142,8 @@ function makeGridDocument(editUrl) {
   };
 }
 
-function makeBrowser(tabs) {
-  const store = {};
+function makeBrowser(tabs, storage) {
+  const store = Object.assign({}, storage || {});
   const listeners = { background: [], content: [] };
   return {
     tabs: tabs || [{ id: 1, url: "https://s4.inhouse.net/index.php?action=view_shift&t=6" }],
@@ -219,7 +219,7 @@ function load(options = {}) {
     selects = true,
   } = options;
 
-  const bus = makeBrowser(options.tabs);
+  const bus = makeBrowser(options.tabs, options.storage);
   const posted = [];
   const fetched = [];
 

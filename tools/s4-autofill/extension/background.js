@@ -21,6 +21,7 @@ const DEFAULT_STATE = {
     finishedAt: null,
     stopped: false,
     note: "",
+    current: null,
   },
   // Writing is off until somebody deliberately turns it on. A dry run is
   // the common case and a mis-click on the live button would otherwise go
@@ -34,6 +35,18 @@ let stopRequested = false;
 async function load() {
   const saved = await browser.storage.local.get("state");
   if (saved && saved.state) state = Object.assign({}, state, saved.state);
+
+  // A persisted "running" cannot be true. This background page has only just
+  // started, so whatever loop set that flag is long gone — and every control
+  // in the UI keys off it, so leaving it set locks the page permanently.
+  if (state.run && state.run.running) {
+    state.run.running = false;
+    state.run.stopped = true;
+    state.run.note =
+      `The previous run stopped after ${state.run.index || 0} of ` +
+      `${state.run.total || 0} when the extension reloaded. Nothing further was sent.`;
+    await browser.storage.local.set({ state });
+  }
 }
 const ready = load();
 
@@ -189,6 +202,7 @@ async function runPlan(dryRun) {
     finishedAt: null,
     stopped: false,
     note: "",
+    current: null,
   };
   await save();
 
@@ -205,6 +219,12 @@ async function runPlan(dryRun) {
       break;
     }
     const payload = payloads[i];
+    state.run.current = {
+      tech: payload.tech_id,
+      from: payload.start_date,
+      to: payload.end_date,
+      shift: payload.shift_time,
+    };
     const body = S4Mapping.buildBody(payload, mapping);
     let result;
     if (dryRun) {
@@ -253,6 +273,7 @@ async function runPlan(dryRun) {
     }
   }
   } finally {
+    state.run.current = null;
     state.run.running = false;
     state.run.finishedAt = new Date().toISOString();
     await save();
@@ -376,6 +397,17 @@ const handlers = {
   async stopRun() {
     stopRequested = true;
     return { ok: true };
+  },
+
+  /** Let the UI clear a run that is flagged as going but plainly is not. */
+  async unstick() {
+    await ready;
+    stopRequested = true;
+    state.run.running = false;
+    state.run.current = null;
+    state.run.note = "Run state cleared by hand.";
+    await save();
+    return state;
   },
 
   async reset() {

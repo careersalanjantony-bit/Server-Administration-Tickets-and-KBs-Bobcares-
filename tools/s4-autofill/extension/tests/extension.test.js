@@ -649,3 +649,68 @@ test("the stuck-run state can be cleared by hand too", async () => {
   const state = await harness.send("getState");
   assert.strictEqual(state.run.running, false);
 });
+
+// ----------------------------------------------------- recovering a stuck run
+// "A run is already going." with no way to see or stop it: the flag had been
+// written to storage by a run that crashed, and a reload brought it back.
+
+test("a run flagged as going is cleared when the extension starts", async () => {
+  const harness = load({ techIds: TECHS });
+  await harness.send("setPlan", { plan: samplePlan() });
+
+  // Persist the state a crashed run would have left behind, then start fresh.
+  const stuck = await harness.send("getState");
+  stuck.run.running = true;
+  stuck.run.index = 120;
+  stuck.run.total = 534;
+  const restarted = load({ techIds: TECHS, storage: { state: stuck } });
+
+  const state = await restarted.send("getState");
+  assert.strictEqual(state.run.running, false, "a fresh background page cannot be mid-run");
+  assert.match(state.run.note, /120 of 534/);
+  assert.match(state.run.note, /reloaded/i);
+});
+
+test("a stuck run does not block the next one", async () => {
+  const harness = load({ techIds: TECHS });
+  await harness.send("setPlan", { plan: samplePlan() });
+  const stuck = await harness.send("getState");
+  stuck.run.running = true;
+
+  const restarted = load({ techIds: TECHS, storage: { state: stuck } });
+  const run = await restarted.send("startRun", { dryRun: true });
+  assert.ok(!run.error, `should start cleanly: ${run.error}`);
+  assert.strictEqual(run.results.length, 2);
+});
+
+test("clearing the run state by hand works", async () => {
+  const harness = load({ techIds: TECHS });
+  await harness.send("setPlan", { plan: samplePlan() });
+  const stuck = await harness.send("getState");
+  stuck.run.running = true;
+  const restarted = load({ techIds: TECHS, storage: { state: stuck } });
+
+  // Simulate it still being set (belt and braces for the button itself).
+  const state = await restarted.send("unstick");
+  assert.strictEqual(state.run.running, false);
+  assert.match(state.run.note, /cleared by hand/i);
+});
+
+test("the row in flight is reported while a run goes", async () => {
+  const plan = samplePlan();
+  const harness = load({ techIds: TECHS });
+  await harness.send("setPlan", { plan });
+  await harness.send("setSettings", { settings: { delayMs: 40, allowWrites: true } });
+  await harness.send("probe");
+
+  const running = harness.send("startRun", { dryRun: false });
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  const midway = await harness.send("getState");
+  assert.ok(midway.run.running, "should be going");
+  assert.ok(midway.run.current, "should say which row is in flight");
+  assert.strictEqual(midway.run.current.tech, plan.assignments[0].tech_id);
+
+  await running;
+  const after = await harness.send("getState");
+  assert.strictEqual(after.run.current, null, "cleared when it finishes");
+});

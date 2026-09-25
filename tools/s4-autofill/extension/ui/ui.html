@@ -61,9 +61,14 @@
       Pause between posts
       <input type="number" id="delay" min="0" max="10000" step="100" value="700"> ms
     </label>
-    <div id="progressWrap" hidden>
+    <div id="status" class="status">
+      <div class="row">
+        <strong id="statusState">Idle</strong>
+        <span id="statusDetail" class="muted"></span>
+        <button id="unstick" type="button" class="link" hidden>clear run state</button>
+      </div>
       <div class="bar"><div id="bar"></div></div>
-      <p id="progressText" class="muted"></p>
+      <p id="statusCurrent" class="muted tiny"></p>
     </div>
     <p id="runNote" class="note" hidden></p>
   </section>

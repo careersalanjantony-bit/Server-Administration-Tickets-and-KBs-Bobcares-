@@ -90,3 +90,9 @@ input[type="text"] {
   border-radius: 3px;
 }
 #mapWhere { font-size: 11px; }
+
+.status { margin-top: 10px; }
+.status strong { font-size: 13px; }
+.status .bar { margin-top: 6px; }
+.status.going strong { color: var(--go); }
+.status.jammed strong { color: var(--stop); }

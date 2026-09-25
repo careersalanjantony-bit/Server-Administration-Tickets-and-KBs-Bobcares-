@@ -83,6 +83,20 @@ a complete mapping:
 It reports which page it settled on, and lists anything it could not match
 rather than guessing.
 
+### Watching a run
+
+The status line under the buttons says what is happening: **Idle**, **Dry run
+going**, **Filling S4**, **Finished** or **Stopped**, with the count, the
+percentage, when it started, and the row in flight right now — who, which
+dates, which shift. The results table fills in underneath as it goes, green
+for accepted and red for refused, with S4's own words in the third column.
+**Copy log** takes the lot to the clipboard.
+
+If it ever says a run is going when nothing is, **clear run state** appears
+next to the status and resets it. That flag is also cleared automatically
+whenever the extension starts, since a background page that has only just
+loaded cannot be in the middle of anything.
+
 The UI is a tab rather than a browser_action popup, because Firefox closes a
 popup the moment it loses focus — and opening the file picker does exactly
 that, so the plan never finished loading. The tab can be closed mid-run
@@ -146,7 +160,7 @@ It writes to a live roster, so:
 node --test
 ```
 
-55 tests. They load the real `background.js` and `content/s4page.js` into a VM
+59 tests. They load the real `background.js` and `content/s4page.js` into a VM
 with a stand-in `browser` API and a form shaped like S4's, and cover the things
 that would actually corrupt a roster: that duration fields are never mistaken
 for the clock fields, that midnight and noon do not post as hour zero, that a
