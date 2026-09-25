@@ -803,6 +803,15 @@ function testReady(needWrites) {
 async function planTestRow({ tech, date } = {}) {
   await ready;
   testReady(false);
+  // A change nobody has answered for would lose its way back if a second
+  // test replaced it.
+  const last = state.lastTest;
+  if (last && last.restorable && !last.kept) {
+    throw new Error(
+      `The last test left ${last.tech} on ${last.date} at ${last.to} and is waiting for your ` +
+        "answer — Put it back or Keep it first."
+    );
+  }
   const { index } = S4Mapping.indexCells(state.grid.cells, state.plan.team_id);
   const pick = pickTest(state.plan, state.mapping, index, tech, date);
   if (pick.error) throw new Error(pick.error);
@@ -815,17 +824,9 @@ async function planTestRow({ tech, date } = {}) {
   };
 }
 
-async function runTestRow({ tech, date } = {}) {
-  await ready;
-  testReady(true);
-  const plan = state.plan;
-  const mapping = state.mapping;
+/** What the test's steps share: how to post one day and how to read it back. */
+function testTools(plan, mapping) {
   const team = plan.team_id;
-  const pick = pickTest(plan, mapping, S4Mapping.indexCells(state.grid.cells, team).index, tech, date);
-  if (pick.error) throw new Error(pick.error);
-
-  testing = true;
-  const steps = [];
   const base = mapping.tabUrl ? `${new URL(mapping.tabUrl).origin}/` : "https://s4.inhouse.net/";
   const ctxFor = (cells) => ({
     index: S4Mapping.indexCells(cells, team).index,
@@ -837,16 +838,9 @@ async function runTestRow({ tech, date } = {}) {
     !!cell &&
     S4Mapping.cellTime(cell.time) === payload.time &&
     String(cell.cat_id) === String(mapping.categoryValues.W);
-  const result = {
-    tech: pick.tech, date: s4Date(pick.iso), calId: pick.cell.cal_id,
-    from: pick.current.label, to: pick.next.label,
-    changed: false, restored: false, steps, at: new Date().toISOString(),
-  };
-  note("warn", "One-row test started — writing to S4", {
-    tech: result.tech, date: result.date, from: result.from, to: result.to,
-  });
-
-  const send = async (label, payload, cells) => {
+  const describe = (cell) =>
+    cell ? `S4 shows ${S4Mapping.cellTime(cell.time)}, cat ${cell.cat_id}` : "the cell is gone";
+  const send = async (steps, label, payload, cells) => {
     const prepared = await prepareRow(payload, mapping, ctxFor(cells), true);
     if (prepared.unchanged) {
       steps.push({ step: label, ok: true, detail: "S4 already shows it — nothing sent" });
@@ -868,49 +862,116 @@ async function runTestRow({ tech, date } = {}) {
     });
     return !!reply.ok;
   };
+  return { team, shows, describe, send };
+}
+
+/**
+ * Moves one day to the next shift along and reads it back, then stops. Whether
+ * it goes back is the person's call: restoreTestRow puts it back, keepTestRow
+ * leaves it. Until one of them is chosen the way back is kept in lastTest.
+ */
+async function runTestRow({ tech, date } = {}) {
+  await ready;
+  testReady(true);
+  const plan = state.plan;
+  const mapping = state.mapping;
+  const tools = testTools(plan, mapping);
+  const pick = pickTest(plan, mapping, S4Mapping.indexCells(state.grid.cells, tools.team).index, tech, date);
+  if (pick.error) throw new Error(pick.error);
+
+  testing = true;
+  const steps = [];
+  const result = {
+    tech: pick.tech, date: s4Date(pick.iso), calId: pick.cell.cal_id,
+    from: pick.current.label, to: pick.next.label,
+    changed: false, restored: false, kept: false, restorable: null,
+    steps, at: new Date().toISOString(),
+  };
+  note("warn", "One-row test started — writing to S4", {
+    tech: result.tech, date: result.date, from: result.from, to: result.to,
+  });
 
   try {
-    // 1. Move the day to the next shift along, and read it back.
-    await send(`change to ${pick.next.label}`, pick.changed, state.grid.cells);
-    let cells = await readGridBack(plan);
-    let now = cellFor(cells, pick.uid, pick.iso, team);
-    result.changed = shows(now, pick.changed);
-    steps.push({
-      step: "read S4 back",
-      ok: result.changed,
-      detail: now ? `S4 shows ${S4Mapping.cellTime(now.time)}, cat ${now.cat_id}` : "the cell is gone",
-    });
-
-    // 2. Put it back — whether or not the change showed, the day must end
-    // the test as it started.
-    if (!shows(now, pick.original)) {
-      await send(`change back to ${pick.current.label}`, pick.original, cells);
-      cells = await readGridBack(plan);
-      now = cellFor(cells, pick.uid, pick.iso, team);
-      steps.push({
-        step: "read S4 back",
-        ok: shows(now, pick.original),
-        detail: now ? `S4 shows ${S4Mapping.cellTime(now.time)}, cat ${now.cat_id}` : "the cell is gone",
-      });
-    }
-    result.restored = shows(now, pick.original);
+    await tools.send(steps, `change to ${pick.next.label}`, pick.changed, state.grid.cells);
+    const cells = await readGridBack(plan);
+    const now = cellFor(cells, pick.uid, pick.iso, tools.team);
+    result.changed = tools.shows(now, pick.changed);
+    result.restored = tools.shows(now, pick.original);
+    steps.push({ step: "read S4 back", ok: result.changed, detail: tools.describe(now) });
   } catch (error) {
     steps.push({ step: "stopped", ok: false, detail: error.message });
   } finally {
     testing = false;
-    state.lastTest = result;
+    // Anything but the day exactly as it started keeps its way back — a
+    // change that went half in needs putting back as much as one that took.
     if (!result.restored) {
-      note("error", "One-row test: the day was NOT put back — fix it by hand in S4", {
-        tech: result.tech, date: result.date, setBackTo: result.from,
+      result.restorable = { uid: pick.uid, iso: pick.iso, payload: pick.original };
+    }
+    state.lastTest = result;
+    if (result.restorable) {
+      note("warn", "One-row test: S4 was changed — put it back or keep it", {
+        tech: result.tech, date: result.date, changedInS4: result.changed, wasBefore: result.from,
       });
     } else {
-      note(result.changed ? "ok" : "warn", "One-row test finished", {
-        changedInS4: result.changed, restored: result.restored,
+      note("warn", "One-row test: S4 did not take the change — the day is as it was", {
+        tech: result.tech, date: result.date,
       });
     }
     await save();
   }
   return result;
+}
+
+async function restoreTestRow() {
+  await ready;
+  const last = state.lastTest;
+  if (!last || !last.restorable) throw new Error("There is nothing from the last test to put back.");
+  testReady(true);
+  const plan = state.plan;
+  const tools = testTools(plan, state.mapping);
+  const { uid, iso, payload } = last.restorable;
+  const steps = last.steps || (last.steps = []);
+
+  testing = true;
+  try {
+    let cells = await readGridBack(plan);
+    let now = cellFor(cells, uid, iso, tools.team);
+    if (!tools.shows(now, payload)) {
+      await tools.send(steps, `change back to ${last.from}`, payload, cells);
+      cells = await readGridBack(plan);
+      now = cellFor(cells, uid, iso, tools.team);
+    }
+    last.restored = tools.shows(now, payload);
+    steps.push({ step: "read S4 back", ok: last.restored, detail: tools.describe(now) });
+  } catch (error) {
+    steps.push({ step: "stopped", ok: false, detail: error.message });
+  } finally {
+    testing = false;
+    last.restoreFailed = !last.restored;
+    if (last.restored) {
+      last.restorable = null;
+      last.kept = false;
+      note("ok", "One-row test: put back", { tech: last.tech, date: last.date, now: last.from });
+    } else {
+      note("error", "One-row test: the day was NOT put back — fix it by hand in S4", {
+        tech: last.tech, date: last.date, setBackTo: last.from,
+      });
+    }
+    await save();
+  }
+  return last;
+}
+
+async function keepTestRow() {
+  await ready;
+  const last = state.lastTest;
+  if (!last || !last.restorable) throw new Error("There is nothing from the last test to keep.");
+  last.kept = true;
+  note("warn", "One-row test: left as changed, as asked", {
+    tech: last.tech, date: last.date, now: last.to, wasBefore: last.from,
+  });
+  await save();
+  return last;
 }
 
 const handlers = {
@@ -920,6 +981,14 @@ const handlers = {
 
   async runTest(message) {
     return runTestRow(message);
+  },
+
+  async restoreTest() {
+    return restoreTestRow();
+  },
+
+  async keepTest() {
+    return keepTestRow();
   },
 
   async getState() {

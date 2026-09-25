@@ -1755,7 +1755,7 @@ function loadUi(state, options = {}) {
     },
     browser: {
       runtime: {
-        sendMessage: async () => state,
+        sendMessage: options.route || (async () => state),
         getManifest: () => ({ version: "test" }),
       },
     },
@@ -2243,41 +2243,124 @@ test("the one-row test says what it will do before doing it", async () => {
   assert.strictEqual(harness.posted.length, 0, "planning it sends nothing");
 });
 
-test("the one-row test changes a day, sees it in S4, and puts it back", async () => {
+test("the one-row test changes a day and stops to ask before putting it back", async () => {
   const { harness, cells } = await testS4();
   const result = await harness.send("runTest", {});
   assert.ok(result.changed, JSON.stringify(result.steps, null, 2));
-  assert.ok(result.restored, JSON.stringify(result.steps, null, 2));
-  assert.strictEqual(harness.posted.length, 2);
+  assert.strictEqual(result.restored, false);
+  assert.strictEqual(harness.posted.length, 1, "only the change so far");
   assert.strictEqual(harness.posted[0].body.shift_time, "851", "to 7:00am");
-  assert.strictEqual(harness.posted[1].body.shift_time, "850", "and back to 06:58am");
+  assert.strictEqual(mojinOn(cells, "2026-10-31").time, "70000", "S4 shows the change");
+  assert.strictEqual(result.restorable.uid, "200");
+  assert.strictEqual(result.restorable.iso, "2026-10-31");
+  assert.strictEqual(result.restorable.payload.time, "06:58");
+});
+
+test("saying yes puts the day back and reads S4 to check", async () => {
+  const { harness, cells } = await testS4();
+  await harness.send("runTest", {});
+  const result = await harness.send("restoreTest");
+  assert.ok(result.restored, JSON.stringify(result.steps, null, 2));
+  assert.strictEqual(result.restorable, null);
+  assert.strictEqual(harness.posted.length, 2);
+  assert.strictEqual(harness.posted[1].body.shift_time, "850", "back to 06:58am");
   assert.strictEqual(mojinOn(cells, "2026-10-31").time, "65800");
   assert.strictEqual(mojinOn(cells, "2026-10-30").time, "65800", "no other day touched");
   const state = await harness.send("getState");
   const ui = loadUi(state);
   ui.render(state);
   assert.match(ui.$("testResult").textContent, /Posting works/);
+  assert.strictEqual(ui.$("testAnswer").hidden, true);
 });
 
-test("a change S4 ignores is reported, and nothing is left changed", async () => {
+test("saying no leaves the change in S4, and it can still be put back later", async () => {
+  const { harness, cells } = await testS4();
+  await harness.send("runTest", {});
+  const kept = await harness.send("keepTest");
+  assert.strictEqual(kept.kept, true);
+  assert.strictEqual(harness.posted.length, 1, "nothing sent to undo it");
+  assert.strictEqual(mojinOn(cells, "2026-10-31").time, "70000");
+  let state = await harness.send("getState");
+  assert.ok(state.log.some((e) => /left as changed, as asked/.test(e.message)));
+  const ui = loadUi(state);
+  ui.render(state);
+  assert.match(ui.$("testResult").textContent, /left as you asked/);
+  assert.strictEqual(ui.$("testAnswer").hidden, false, "Put it back stays on offer");
+  assert.strictEqual(ui.$("testKeep").hidden, true);
+  assert.strictEqual(ui.$("testOne").disabled, false, "a new test can run");
+
+  const later = await harness.send("restoreTest");
+  assert.ok(later.restored);
+  assert.strictEqual(mojinOn(cells, "2026-10-31").time, "65800");
+});
+
+test("a test nobody has answered holds back the next one", async () => {
+  const { harness } = await testS4();
+  await harness.send("runTest", {});
+  const reply = await harness.send("planTest", {});
+  assert.match(reply.error, /waiting for your answer/);
+  const state = await harness.send("getState");
+  const ui = loadUi(state);
+  ui.render(state);
+  assert.strictEqual(ui.$("testOne").disabled, true);
+  assert.strictEqual(ui.$("testAnswer").hidden, false);
+  assert.strictEqual(ui.$("testKeep").hidden, false);
+});
+
+test("the panel asks after the change, and OK puts it back", async () => {
+  const { harness, cells } = await testS4();
+  const state = await harness.send("getState");
+  const asked = [];
+  const ui = loadUi(state, {
+    route: (message) => harness.send(message.type, message),
+    confirm: (text) => (asked.push(text), true),
+  });
+  await ui.$("testOne").listeners.click();
+  assert.strictEqual(asked.length, 2, asked.join("\n---\n"));
+  assert.match(asked[1], /S4 took the change: mojin\.t on 31-Oct-2026 now shows 7:00am-3:00pm/);
+  assert.match(asked[1], /Put it back to 06:58am-02:58pm\?/);
+  assert.strictEqual(harness.posted.length, 2);
+  assert.strictEqual(mojinOn(cells, "2026-10-31").time, "65800");
+});
+
+test("the panel asks after the change, and Cancel leaves it", async () => {
+  const { harness, cells } = await testS4();
+  const state = await harness.send("getState");
+  let n = 0;
+  const ui = loadUi(state, {
+    route: (message) => harness.send(message.type, message),
+    confirm: () => ++n === 1,
+  });
+  await ui.$("testOne").listeners.click();
+  assert.strictEqual(n, 2);
+  assert.strictEqual(harness.posted.length, 1);
+  assert.strictEqual(mojinOn(cells, "2026-10-31").time, "70000");
+  const after = await harness.send("getState");
+  assert.strictEqual(after.lastTest.kept, true);
+});
+
+test("a change S4 ignores is reported, and there is nothing to ask about", async () => {
   const { harness, cells } = await testS4({ ignore: () => true });
   const result = await harness.send("runTest", {});
   assert.strictEqual(result.changed, false);
   assert.strictEqual(result.restored, true);
+  assert.strictEqual(result.restorable, null);
   assert.strictEqual(harness.posted.length, 1, "nothing to put back, so nothing more sent");
   assert.strictEqual(mojinOn(cells, "2026-10-31").time, "65800");
 });
 
 test("a day that is not put back is shouted about, with the fix", async () => {
   const { harness } = await testS4({ ignore: (n) => n === 2 });
-  const result = await harness.send("runTest", {});
-  assert.ok(result.changed);
+  await harness.send("runTest", {});
+  const result = await harness.send("restoreTest");
   assert.strictEqual(result.restored, false);
+  assert.ok(result.restorable, "the way back is kept for another try");
   const state = await harness.send("getState");
   assert.ok(state.log.some((e) => e.level === "error" && /NOT put back/.test(e.message)));
   const ui = loadUi(state);
   ui.render(state);
   assert.match(ui.$("testResult").textContent, /set mojin\.t on 31-Oct-2026 to 06:58am-02:58pm by hand/);
+  assert.strictEqual(ui.$("testAnswer").hidden, false, "and can try again");
 });
 
 test("the one-row test needs writing unlocked", async () => {

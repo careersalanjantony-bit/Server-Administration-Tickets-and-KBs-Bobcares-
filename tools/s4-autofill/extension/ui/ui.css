@@ -29,6 +29,7 @@ section {
   border: 1px solid var(--line); border-radius: 4px;
   padding: 10px; margin-bottom: 10px; background: var(--panel);
 }
+[hidden] { display: none !important; }
 .row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .small { font-size: 12px; margin-top: 8px; }
 button {

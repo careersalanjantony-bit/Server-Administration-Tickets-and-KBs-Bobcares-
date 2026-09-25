@@ -291,7 +291,7 @@ It writes to a live roster, so:
 node --test
 ```
 
-158 tests. They load the real `background.js` and `content/s4page.js` into a VM
+163 tests. They load the real `background.js` and `content/s4page.js` into a VM
 with a stand-in `browser` API and a form shaped like S4's, and cover the things
 that would actually corrupt a roster: that duration fields are never mistaken
 for the clock fields, that midnight and noon do not post as hour zero, that a
@@ -338,14 +338,19 @@ you type — and:
 
 1. changes it to the next shift along (06:58am → 7:00am, say),
 2. reads the month grid back to see whether S4 shows the change,
-3. changes it back to what it was,
-4. reads the grid again to check it is restored.
+3. **asks whether to put it back.** OK changes it back and reads the grid
+   again to check; Cancel leaves the change in S4.
 
 It says what it will do and asks first, needs writing unlocked, and touches
-nothing but that one day. If S4 ignores the change, nothing is left changed.
-If the day is not put back, the log and the page say exactly what to set it to
-by hand. What S4 answered to each post is kept in *Copy diagnostics*
-(`lastTest`).
+nothing but that one day. If S4 ignores the change there is nothing to ask
+about — the day is as it was.
+
+A change you kept can still be undone later with *Put it back*, which stays
+under the test until it is used. If the panel was closed before you answered,
+*Put it back* and *Keep it* are waiting there, and a new test will not start
+until one of them is chosen, so a change is never left without its way back.
+If putting it back fails, the log and the page say exactly what to set it to by
+hand. What S4 answered to each post is kept in *Copy diagnostics* (`lastTest`).
 
 ## What has not been tested
 

@@ -60,9 +60,9 @@
     <details id="testDetails" class="test">
       <summary>Test one row on the live roster first</summary>
       <p class="muted tiny">
-        Moves one working day to the next shift along, reads S4 back to check it
-        saved, then puts it back and checks again. Leave the boxes empty to let it
-        pick a day.
+        Moves one working day to the next shift along and reads S4 back to check
+        it saved. Then it asks whether to put the day back — say no and the
+        change stays. Leave the boxes empty to let it pick a day.
       </p>
       <div class="row">
         <input type="text" id="testTech" placeholder="tech, e.g. alan.j (optional)">
@@ -70,6 +70,10 @@
         <button id="testOne" type="button">Test one row</button>
       </div>
       <p id="testResult" class="muted"></p>
+      <div class="row" id="testAnswer" hidden>
+        <button id="testRestore" type="button">Put it back</button>
+        <button id="testKeep" type="button">Keep it</button>
+      </div>
     </details>
     <label class="row small">
       Pause between posts
