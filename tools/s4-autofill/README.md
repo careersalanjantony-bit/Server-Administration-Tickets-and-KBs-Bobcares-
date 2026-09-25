@@ -27,8 +27,7 @@ python3 -m s4autofill plan --month 2026-11 \
 
 # 3. Open out/2026-11/preview.html and read it
 
-# 4. Teach it S4's form once (see "Connecting to S4" — one-time)
-python3 -m s4autofill inspect --save --from-json s4-form-dump.json
+# 4. Fill S4 — easiest with the Firefox extension, see below
 
 # 5. Dry run, then for real
 export S4_USER=... S4_PASSWORD=...
@@ -225,7 +224,25 @@ the bottom of `summary.csv` against `observed_avg`.
 
 ---
 
-## Connecting to S4
+## Filling S4
+
+Two ways in. **The Firefox extension is the easy one** and is what the team
+should use day to day — S4 is internal-only, so an extension running in your own
+browser is the one thing that can reach it without credentials living anywhere.
+
+```bash
+python3 -m s4autofill plan --month 2026-11    # writes out/2026-11/plan.json
+```
+
+Load [`extension/`](extension/) via `about:debugging`, open S4, load
+`plan.json`, read the form, dry run, fill. It works the dropdown mapping out
+itself, refuses to post while anything is unmatched, stops after 3 failures and
+has a Stop button. See [`extension/README.md`](extension/README.md).
+
+The command-line `push` below does the same job from a machine that can reach
+S4, if you would rather script it.
+
+## Connecting to S4 from the command line
 
 S4's form field names are **not** hard-coded, because guessing them would write
 the wrong thing into a live roster. `config/s4_form.json` ships with
@@ -280,13 +297,15 @@ if there are errors.
 | `schedule.csv` | One row per tech per day |
 | `summary.csv` | The end-of-month summary: days per slot, offs, each leave column, and an Average Count row |
 | `payloads.jsonl` | Exactly what `push` will send |
+| `plan.json` | What the Firefox extension loads |
 
 ---
 
 ## Tests
 
 ```bash
-python3 -m pytest tests/ -q
+python3 -m pytest tests/ -q      # 103 tests, the planner
+cd extension && node --test      # 21 tests, the extension
 ```
 
 ---

@@ -52,6 +52,7 @@ class Batch:
     start: dt.date
     end: dt.date
     time: str = ""
+    source: str = ""
 
     @property
     def days(self) -> int:
@@ -72,7 +73,7 @@ def batch_assignments(plan: Plan) -> list[Batch]:
             if current:
                 batches.append(current)
             current = Batch(tech_id, row.slot_id or "", row.category,
-                            row.date, row.date, row.start or "")
+                            row.date, row.date, row.start or "", row.source)
         if current:
             batches.append(current)
     batches.sort(key=lambda b: (b.start, b.tech_id))
@@ -250,6 +251,54 @@ def write_payloads(plan: Plan, config: ShiftConfig, roster: Roster, path: Path,
     return path
 
 
+def write_extension_plan(plan: Plan, config: ShiftConfig, roster: Roster, path: Path,
+                         reason: str = "Monthly roster autofill") -> Path:
+    """Everything the browser extension needs, in one file.
+
+    It carries the slot labels and the roster alongside the shift blocks,
+    because that is what lets the extension work out which of S4's dropdown
+    options means which shift without anybody typing the mapping out.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    assignments = []
+    for batch in batch_assignments(plan):
+        slot = config.slot(batch.slot_id) if batch.slot_id else None
+        tech = roster.get(batch.tech_id)
+        assignments.append({
+            "tech_id": batch.tech_id,
+            "tech_email": tech.email,
+            "category": batch.category,
+            "slot_id": batch.slot_id or None,
+            "shift_time": slot.label if slot else "",
+            "start_date": s4_date(batch.start),
+            "end_date": s4_date(batch.end),
+            "days": batch.days,
+            "time": batch.time or (slot.start if slot else config.rules.flexy_default_start),
+            "duration_min": slot.duration_min if slot else config.rules.flexy_default_duration_min,
+            "reason": reason,
+            "source": batch.source,
+        })
+    document = {
+        "month": plan.month,
+        "generated": dt.datetime.now().isoformat(timespec="seconds"),
+        "team": config.team.get("name", ""),
+        "team_id": config.team.get("s4_team_id"),
+        "form_name": "shift",
+        "slots": [{"id": s.id, "label": s.label, "band": s.band} for s in config.slots],
+        "categories": dict(config.categories),
+        "techs": [
+            {"id": t.id, "display_name": t.display_name, "email": t.email,
+             "division": t.division}
+            for t in roster.techs if t.active
+        ],
+        "assignments": assignments,
+    }
+    with open(path, "w") as f:
+        json.dump(document, f, indent=2)
+        f.write("\n")
+    return path
+
+
 def write_all(plan: Plan, config: ShiftConfig, roster: Roster, out_dir: Path) -> dict[str, Path]:
     out_dir.mkdir(parents=True, exist_ok=True)
     return {
@@ -258,10 +307,12 @@ def write_all(plan: Plan, config: ShiftConfig, roster: Roster, out_dir: Path) ->
         "summary": write_summary_csv(plan, config, roster, out_dir / "summary.csv"),
         "preview": write_preview_html(plan, config, roster, out_dir / "preview.html"),
         "payloads": write_payloads(plan, config, roster, out_dir / "payloads.jsonl"),
+        "extension": write_extension_plan(plan, config, roster, out_dir / "plan.json"),
     }
 
 
 __all__ = [
     "Batch", "batch_assignments", "write_schedule_csv", "write_grid_csv",
-    "write_summary_csv", "write_preview_html", "write_payloads", "write_all",
+    "write_summary_csv", "write_preview_html", "write_payloads", "write_extension_plan",
+    "write_all",
 ]

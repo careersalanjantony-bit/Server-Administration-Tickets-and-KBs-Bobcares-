@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="popup.css">
+  <title>S4 Shift Autofill</title>
+</head>
+<body>
+  <header>
+    <h1>S4 Shift Autofill</h1>
+    <span id="month" class="muted"></span>
+  </header>
+
+  <section>
+    <h2><span class="step">1</span> Plan</h2>
+    <input type="file" id="planFile" accept=".json,application/json">
+    <p id="planInfo" class="muted">No plan loaded.</p>
+  </section>
+
+  <section>
+    <h2><span class="step">2</span> S4 form</h2>
+    <button id="probe" type="button">Read the form on this page</button>
+    <p id="mapInfo" class="muted">Not read yet.</p>
+    <ul id="mapProblems" class="problems"></ul>
+  </section>
+
+  <section>
+    <h2><span class="step">3</span> Fill</h2>
+    <div class="row">
+      <button id="dryRun" type="button">Dry run</button>
+      <button id="live" type="button" class="danger" disabled>Fill S4 for real</button>
+      <button id="stop" type="button" hidden>Stop</button>
+    </div>
+    <label class="row small">
+      Pause between posts
+      <input type="number" id="delay" min="0" max="10000" step="100" value="700"> ms
+    </label>
+    <div id="progressWrap" hidden>
+      <div class="bar"><div id="bar"></div></div>
+      <p id="progressText" class="muted"></p>
+    </div>
+    <p id="runNote" class="note" hidden></p>
+  </section>
+
+  <section id="resultsSection" hidden>
+    <h2>Results</h2>
+    <div class="row">
+      <span id="counts" class="muted"></span>
+      <button id="copy" type="button" class="link">Copy log</button>
+      <button id="reset" type="button" class="link">Clear</button>
+    </div>
+    <label class="row small">
+      <input type="checkbox" id="failuresOnly"> failures only
+    </label>
+    <table id="results"><tbody></tbody></table>
+  </section>
+
+  <p id="error" class="error" hidden></p>
+  <script src="../content/mapping.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>

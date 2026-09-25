@@ -16,7 +16,7 @@ def build(tmp_path):
 def test_write_all_produces_every_artefact(tmp_path):
     plan, config, roster = build(tmp_path)
     written = write_all(plan, config, roster, tmp_path)
-    assert set(written) == {"schedule", "grid", "summary", "preview", "payloads"}
+    assert set(written) == {"schedule", "grid", "summary", "preview", "payloads", "extension"}
     for path in written.values():
         assert path.exists() and path.stat().st_size > 0
 
@@ -75,3 +75,36 @@ def test_payloads_carry_s4_formatted_dates(tmp_path):
         assert row["start_date"].endswith("-Oct-2026")
         assert row["duration_min"] == 480
         assert row["team_id"] == 1
+
+
+def test_extension_plan_carries_what_the_browser_needs(tmp_path):
+    """The extension works the mapping out from the plan, so the plan has to
+    carry the slot labels, the categories and the roster."""
+    import json
+    from s4autofill.export import write_extension_plan
+    plan, config, roster = build(tmp_path)
+    path = write_extension_plan(plan, config, roster, tmp_path / "plan.json")
+    doc = json.loads(path.read_text())
+    assert doc["month"] == "2026-10"
+    assert {s["id"] for s in doc["slots"]} == {s.id for s in config.slots}
+    assert all(s["label"] for s in doc["slots"])
+    assert doc["categories"]["W"]
+    assert {t["id"] for t in doc["techs"]} == {t.id for t in roster.techs if t.active}
+    assert doc["assignments"]
+
+
+def test_extension_plan_covers_every_tech_day(tmp_path):
+    import json
+    from s4autofill.export import write_extension_plan
+    plan, config, roster = build(tmp_path)
+    doc = json.loads(write_extension_plan(plan, config, roster, tmp_path / "p.json").read_text())
+    assert sum(a["days"] for a in doc["assignments"]) == len(plan.assignments)
+
+
+def test_extension_plan_says_why_each_shift_was_chosen(tmp_path):
+    """The popup shows this per row, so the preference reasoning stays visible."""
+    import json
+    from s4autofill.export import write_extension_plan
+    plan, config, roster = build(tmp_path)
+    doc = json.loads(write_extension_plan(plan, config, roster, tmp_path / "p.json").read_text())
+    assert any(a["source"] for a in doc["assignments"])
