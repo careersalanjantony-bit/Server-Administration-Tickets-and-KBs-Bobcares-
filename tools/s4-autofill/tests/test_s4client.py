@@ -85,6 +85,19 @@ def test_push_refuses_to_execute_with_placeholders():
         client.push([PAYLOAD])
 
 
+def test_push_refuses_to_execute_without_per_row_calendar_ids(monkeypatch):
+    # A fully mapped config is still not enough: nothing here reads cal_id.
+    client = S4Client(MAPPED, dry_run=False)
+
+    def explode(*_args, **_kwargs):
+        raise AssertionError("nothing may be sent without a row to send it to")
+
+    monkeypatch.setattr(client, "post", explode)
+    monkeypatch.setattr(client, "login", explode)
+    with pytest.raises(RuntimeError, match="cal_id"):
+        client.push([PAYLOAD])
+
+
 def test_dry_run_never_touches_the_network(monkeypatch):
     client = S4Client(MAPPED, dry_run=True)
 

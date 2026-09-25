@@ -10,17 +10,25 @@
   "use strict";
 
   function describeInput(el) {
+    const type = (el.type || "text").toLowerCase();
     return {
       name: el.name,
-      type: (el.type || "text").toLowerCase(),
+      type,
       // Never carry a credential out of the page.
-      value: (el.type || "").toLowerCase() === "password" ? "" : el.value || "",
+      value: type === "password" ? "" : el.value || "",
+      // A radio or checkbox only counts if it is ticked; its value attribute is
+      // there either way. Without this the last of seven radios won.
+      checked: type === "radio" || type === "checkbox" ? !!el.checked : undefined,
     };
   }
 
   function describeSelect(el) {
     return {
       name: el.name,
+      // What the browser would submit for it as rendered. A multi-select
+      // sends several values, which a flat body cannot carry, so it is left
+      // for the mapping to fill or not at all.
+      selected: el.multiple || el.value === undefined ? undefined : el.value,
       options: Array.from(el.options).map((o) => ({
         value: o.value,
         text: (o.textContent || "").trim(),
@@ -171,12 +179,71 @@
     });
   }
 
+  /**
+   * Every cell in the month grid, as the arguments its popup() call carries.
+   *
+   * Read off the live page where possible: a fetched page never runs its
+   * scripts, so any cells S4 draws in javascript only exist in the open tab.
+   */
+  function gridCells(doc, limit) {
+    const html = doc.documentElement ? doc.documentElement.innerHTML : "";
+    const signature = S4Mapping.popupSignature(html);
+    const params =
+      signature && signature.params.length ? signature.params : S4Mapping.KNOWN_POPUP_PARAMS;
+    const cells = [];
+    const calls = [];
+    const max = limit || 4000;
+    const readCalls = (code) => {
+      const call = /(?:^|[^\w.])popup\s*\(/g;
+      let match;
+      while ((match = call.exec(code)) !== null && cells.length < max) {
+        // Skip the definition itself: "function popup(cal_id, date, ...)".
+        if (/function\s*$/.test(code.slice(Math.max(0, match.index - 12), match.index + 1))) continue;
+        const args = S4Mapping.parseCallArgs(code.slice(match.index + match[0].length));
+        if (!args || !args.length) continue;
+        const cell = {};
+        params.forEach((name, i) => {
+          cell[name] = args[i] === undefined ? "" : args[i];
+        });
+        cells.push(cell);
+        if (calls.length < 3) calls.push(code.slice(match.index, match.index + 260).trim());
+      }
+    };
+    const elements = doc.querySelectorAll ? doc.querySelectorAll("[onclick], a[href]") : [];
+    Array.from(elements).forEach((el) => {
+      if (cells.length >= max) return;
+      readCalls(`${el.getAttribute("onclick") || ""} ${el.getAttribute("href") || ""}`);
+    });
+    // Cells wired up some other way — ondblclick, a handler in a script
+    // block — still carry the call in the markup somewhere.
+    if (!cells.length && html) {
+      readCalls(
+        html
+          .replace(/&quot;/g, '"')
+          .replace(/&#0?39;|&apos;/g, "'")
+          .replace(/&amp;/g, "&")
+      );
+    }
+    return {
+      signature: signature
+        ? { params: signature.params, template: signature.template, source: signature.source }
+        : null,
+      cells,
+      calls,
+    };
+  }
+
   /** Fetch another S4 page with the current session and read its forms. */
   async function probeUrl(url) {
     const response = await fetch(url, { credentials: "same-origin" });
     const html = await response.text();
     const doc = new DOMParser().parseFromString(html, "text/html");
-    return { ok: response.status < 400, status: response.status, forms: probeDocument(doc) };
+    return {
+      ok: response.status < 400,
+      status: response.status,
+      forms: probeDocument(doc),
+      grid: gridCells(doc),
+    };
   }
 
   function postUrl(action) {
@@ -233,6 +300,7 @@
           candidates: candidateEditUrls(message.limit),
           calendarIds: calendarIds(message.idLimit),
           gridSamples: gridSamples(message.sampleLimit),
+          grid: gridCells(document),
         });
       case "probeUrl":
         return probeUrl(message.url).catch((error) => ({

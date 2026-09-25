@@ -193,7 +193,16 @@ class S4Client:
                     f"config/s4_form.json: {', '.join(missing)}. Run "
                     "`s4autofill inspect --url <shift edit page> --save` first."
                 )
-            self.login()
+            # S4 changes a shift by its calendar row, and cal_id is per person
+            # per day. It only comes from the month grid's popup() calls, which
+            # this client does not read, so every body it built would name no
+            # row at all. The extension reads the grid and opens each row's
+            # editor; until this does the same, it must not write.
+            raise RuntimeError(
+                "refusing to push: S4 needs each block's own calendar row (cal_id), which "
+                "only the Firefox extension reads from the month grid. Use the extension "
+                "to fill S4; this command's dry run still shows what the plan holds."
+            )
         url = self._url(self.form_config["post_path"])
         delay = float(self.form_config.get("request_delay_seconds", 0.5))
         for payload in payloads[:limit] if limit else payloads:

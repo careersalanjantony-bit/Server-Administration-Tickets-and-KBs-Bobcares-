@@ -171,6 +171,8 @@ function constructedCandidates(plan, origin) {
   const urls = [];
   const add = (query) => urls.push(`${origin}/index.php?${query}`);
   if (team !== undefined && team !== null) {
+    // The plan month's grid carries a calendar row for every person and day.
+    add(`action=view_shift&t=${team}&y=${year}&m=${month}`);
     add(`action=view_shift&sdate=${first}&edate=${last}&t=${team}&edit_co_shift=N`);
     add(`action=view_shift&sdate=${first}&edate=${last}&t=${team}&edit_co_shift=Y`);
   }
@@ -242,67 +244,142 @@ function summariseForms(forms) {
   }));
 }
 
-async function s4Tabs() {
-  const tabs = (await browser.tabs.query({ url: "*://s4.inhouse.net/*" })).filter(
-    (tab) => !(tab.url || "").startsWith(browser.runtime.getURL(""))
+/**
+ * Find the calendar row a block has to change.
+ *
+ * cal_id is per person per day, so a block is matched on its person's S4 user
+ * id and its first date. A block covering several days goes to the row for the
+ * first of them; the form's own date range carries it across the rest.
+ */
+function resolveRow(payload, mapping, index) {
+  const uid = (mapping.staffValues || {})[payload.tech_id];
+  if (!uid) {
+    return { error: `no S4 user id for ${payload.tech_id} — they were not in any staff list` };
+  }
+  const from = S4Mapping.splitDate(payload.start_date);
+  if (!from) return { error: `could not read the date ${payload.start_date}` };
+  const cell = index[`${uid}|${from.iso}`];
+  if (!cell) {
+    return {
+      error: `no calendar row in the grid for ${payload.tech_id} (${uid}) on ${payload.start_date}`,
+    };
+  }
+  // A cell with no id would open a blank editor, and posting that tells S4
+  // nothing about which row to change.
+  if (!/^\d+$/.test(String(cell.cal_id || "").trim()) || Number(cell.cal_id) === 0) {
+    return {
+      error:
+        `no calendar row in the grid for ${payload.tech_id} (${uid}) on ${payload.start_date} ` +
+        `— its cell carries no row id ("${cell.cal_id || ""}")`,
+    };
+  }
+  return { uid, cell };
+}
+
+/** The form in an editor page that actually changes a shift. */
+function editorForm(forms) {
+  return (
+    (forms || []).find((f) => (f.inputs || []).some((i) => i.name === "cal_id")) ||
+    (forms || []).find((f) => /chkshift/.test(f.action || "")) ||
+    (forms || [])[0] ||
+    null
   );
-  if (!tabs.length) {
-    throw new Error("No S4 tab is open. Open the shift page in a tab and try again.");
-  }
-  return tabs;
 }
 
-async function askTab(tabId, message) {
-  try {
-    return await browser.tabs.sendMessage(tabId, message);
-  } catch (error) {
-    throw new Error(
-      "Could not reach the S4 page. Reload the S4 tab so the extension loads into it, " +
-        `then try again. (${error.message})`
-    );
+/** Why a body must not be posted, or null if it is fine. */
+function checkBody(payload, body, rowMapping, row, opened) {
+  if (opened && !String(body.cal_id || "").trim()) {
+    return "the editor for this row came back without a cal_id";
   }
-}
-
-/** Talk to the tab the probe settled on, or the only one there is. */
-async function ask(message) {
-  const tabs = await s4Tabs();
-  const chosen =
-    (state.mapping && tabs.find((t) => t.id === state.mapping.tabId)) || tabs[0];
-  return askTab(chosen.id, message);
+  if (!(rowMapping.categoryValues || {})[payload.category]) {
+    return `S4 offers no category matching ${payload.category}`;
+  }
+  if (payload.slot_id && !(rowMapping.shiftTimeValues || {})[payload.slot_id]) {
+    return `S4 offers no shift time matching ${payload.shift_time}`;
+  }
+  // The editor renders the user it was opened for. If that is not the person
+  // this block is about, the cell lookup went wrong and nothing should move.
+  const staffField = (rowMapping.fields || {}).staff;
+  const rendered = staffField ? (rowMapping.baseFields || {})[staffField] : "";
+  if (opened && rendered && String(rendered) !== String(row.uid)) {
+    return `the editor opened is for user ${rendered}, not ${payload.tech_id} (${row.uid})`;
+  }
+  return null;
 }
 
 /**
- * How useful a page's forms look.
+ * Everything one block needs before it can be posted: the calendar row it
+ * changes, that row's editor as S4 renders it, and a body built from that.
  *
- * S4 spreads this over two windows: the month grid holds an empty
- * <form name="shift">, and the edit popup holds the controls that matter. So
- * rather than making somebody pick the right window, every open S4 tab is
- * probed and the one carrying the real form wins.
+ * Each row's editor is read fresh because the hidden fields — cal_id first
+ * among them — belong to that row and no other.
  */
-/**
- * Addresses the editor is likely to live at, built rather than scraped.
- *
- * S4 opens the editor from javascript that assembles the url out of pieces, so
- * there is no whole address in the markup to find. The shape is known though —
- * index.php?action=view_shift&sdate=…&edate=…&t=…&edit_co_shift=N — and the
- * plan carries both the month and the team, so it can simply be written out.
- */
-function constructedCandidates(plan, origin) {
-  if (!plan || !plan.month) return [];
-  const [year, month] = plan.month.split("-").map(Number);
-  if (!year || !month) return [];
-  const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
-  const first = `${plan.month}-01`;
-  const last = `${plan.month}-${String(lastDay).padStart(2, "0")}`;
-  const team = plan.team_id;
-  const urls = [];
-  const add = (query) => urls.push(`${origin}/index.php?${query}`);
-  if (team !== undefined && team !== null) {
-    add(`action=view_shift&sdate=${first}&edate=${last}&t=${team}&edit_co_shift=N`);
-    add(`action=view_shift&sdate=${first}&edate=${last}&t=${team}&edit_co_shift=Y`);
+async function prepareRow(payload, mapping, ctx, openEditor) {
+  const row = resolveRow(payload, mapping, ctx.index);
+  if (row.error) return { ok: false, skipped: true, detail: row.error };
+
+  const url = new URL(S4Mapping.editorUrl(row.cell, ctx.signature), ctx.base).href;
+  // Unopened rows only ever reach a dry run's table. Show them with their own
+  // row's id rather than whichever row the probe happened to open.
+  let rowMapping = Object.assign({}, mapping, {
+    baseFields: Object.assign({}, mapping.baseFields, { cal_id: row.cell.cal_id }),
+  });
+  let action = mapping.action || "";
+  if (openEditor) {
+    let reply;
+    try {
+      reply = await ask({ type: "probeUrl", url });
+    } catch (error) {
+      return { ok: false, detail: `could not open this row's editor: ${error.message}`, editor: url };
+    }
+    if (!reply || !reply.ok) {
+      const why = reply ? reply.detail || `HTTP ${reply.status}` : "no reply";
+      return { ok: false, detail: `could not open this row's editor (${why})`, editor: url };
+    }
+    const form = editorForm(reply.forms);
+    if (!form) return { ok: false, detail: "this row's editor came back with no form", editor: url };
+    const matched = S4Mapping.matchOptions([form], ctx.plan);
+    rowMapping = Object.assign({}, mapping, {
+      baseFields: S4Mapping.baseFieldsOf([form], form.name),
+      // This row's own editor is the authority on what it will accept.
+      shiftTimeValues: Object.assign({}, mapping.shiftTimeValues, matched.shiftTimeValues),
+      categoryValues: Object.assign({}, mapping.categoryValues, matched.categoryValues),
+    });
+    action = form.action || action;
   }
-  add(`action=view_shift&sdate=${first}&edate=${last}&edit_co_shift=N`);
-  return urls;
+  const body = S4Mapping.buildBody(payload, rowMapping);
+  const problem = checkBody(payload, body, rowMapping, row, openEditor);
+  return {
+    ok: !problem,
+    detail: problem || "",
+    body,
+    action,
+    editor: url,
+    calId: row.cell.cal_id,
+    opened: openEditor,
+  };
+}
+
+function coverage(plan, mapping, grid) {
+  const { index, duplicates } = S4Mapping.indexCells(
+    (grid && grid.cells) || [],
+    plan && plan.team_id
+  );
+  const payloads = payloadsFrom(plan);
+  let resolved = 0;
+  const examples = [];
+  payloads.forEach((payload) => {
+    const row = resolveRow(payload, mapping, index);
+    if (row.cell) resolved += 1;
+    else if (examples.length < 5) examples.push(row.error);
+  });
+  return {
+    total: payloads.length,
+    resolved,
+    missing: payloads.length - resolved,
+    duplicates,
+    examples,
+  };
 }
 
 function payloadsFrom(plan) {
@@ -343,26 +420,6 @@ async function runPlan(dryRun) {
     categoryValues: {},
     staffValues: {},
   };
-  // S4 identifies the row being changed by cal_id. Probing an editor that was
-  // never opened against a real row leaves it empty, and a post carrying an
-  // empty cal_id is at best ignored and at worst applied somewhere unintended.
-  const rowKeys = ["cal_id", "tid"];
-  const blank = rowKeys.filter((name) => {
-    const value = (mapping.baseFields || {})[name];
-    return value !== undefined && String(value).trim() === "";
-  });
-  if (!dryRun && blank.length) {
-    note("error", "Refused to run: the form does not say which row to change", {
-      empty: blank,
-      why: "the editor was read without a cal_id, so S4 rendered it blank",
-    });
-    throw new Error(
-      `Refusing to post: ${blank.join(" and ")} came back empty, so S4 would not know ` +
-        "which shift to change. Open a shift in S4 and paste that page's address into " +
-        "the editor page box, then find the form again."
-    );
-  }
-
   const missing = S4Mapping.missingMapping(mapping, state.plan);
   if (!dryRun && (missing.fields.length || missing.slots.length || missing.categories.length)) {
     note("error", "Refused to run: the mapping is incomplete", missing);
@@ -375,6 +432,19 @@ async function runPlan(dryRun) {
         ]
           .filter(Boolean)
           .join("; ")
+    );
+  }
+
+  // cal_id is per person per day, and the grid is the only place it comes
+  // from. Without the grid's rows there is no block that can be posted safely.
+  const cells = (state.grid && state.grid.cells) || [];
+  if (!dryRun && !cells.length) {
+    note("error", "Refused to run: the grid's calendar rows have not been read", {
+      why: "each block needs the cal_id of its own row, and those come from the grid",
+    });
+    throw new Error(
+      "Refusing to post: the month grid's calendar rows have not been read, so no block " +
+        "has a cal_id to change. Open the month in S4 and press Find the shift form again."
     );
   }
 
@@ -398,14 +468,30 @@ async function runPlan(dryRun) {
   };
   await save();
 
-  const action = mapping.action || "";
   let failures = 0;
+  const { index } = S4Mapping.indexCells(cells, state.plan.team_id);
+  const base = mapping.tabUrl ? `${new URL(mapping.tabUrl).origin}/` : "https://s4.inhouse.net/";
+  const ctx = {
+    index,
+    signature: state.grid ? state.grid.signature : null,
+    base,
+    plan: state.plan,
+  };
+  // A dry run opens a handful of real editors — reading is harmless — so the
+  // bodies it shows are the ones S4 would actually get.
+  const DRY_OPEN = 5;
+  let dryOpened = 0;
   // Worth saying once, rather than on all five hundred rows.
   const unmapped = !state.mapping;
   if (dryRun && unmapped) {
     note("warn", "Dry run has no field mapping — showing the plan only", {
       blocks: payloads.length,
       next: "Find the shift form, then dry run again",
+    });
+  } else if (dryRun && !cells.length) {
+    note("warn", "Dry run has no calendar rows — no block can be matched to a row", {
+      blocks: payloads.length,
+      next: "Open the month in S4, press Find the shift form again, then dry run",
     });
   }
 
@@ -425,25 +511,43 @@ async function runPlan(dryRun) {
       to: payload.end_date,
       shift: payload.shift_time,
     };
-    const body = S4Mapping.buildBody(payload, mapping);
     let result;
-    if (dryRun) {
+    if (dryRun && unmapped) {
       result = {
-        ok: !unmapped,
-        detail: unmapped
-          ? "no field mapping yet, so nothing could be built"
-          : "dry run — nothing sent",
-        body,
+        ok: false,
+        detail: "no field mapping yet, so nothing could be built",
+        body: S4Mapping.buildBody(payload, mapping),
+      };
+    } else if (dryRun) {
+      const open = dryOpened < DRY_OPEN && !!resolveRow(payload, mapping, index).cell;
+      if (open) dryOpened += 1;
+      const prepared = await prepareRow(payload, mapping, ctx, open);
+      result = {
+        ok: prepared.ok,
+        skipped: prepared.skipped,
+        detail: prepared.ok
+          ? `dry run — row ${prepared.calId} ${prepared.opened ? "opened" : "found"}, nothing sent`
+          : prepared.detail,
+        body: prepared.body,
       };
     } else {
-      try {
-        result = await ask({ type: "post", body, action });
-      } catch (error) {
-        result = { ok: false, detail: error.message };
+      const prepared = await prepareRow(payload, mapping, ctx, true);
+      if (prepared.skipped) {
+        result = { ok: false, skipped: true, detail: `skipped — ${prepared.detail}` };
+      } else if (!prepared.ok) {
+        result = { ok: false, detail: prepared.detail, body: prepared.body };
+      } else {
+        try {
+          result = await ask({ type: "post", body: prepared.body, action: prepared.action });
+        } catch (error) {
+          result = { ok: false, detail: error.message };
+        }
+        result.body = prepared.body;
       }
-      result.body = body;
     }
-    if (!result.ok) failures += 1;
+    // A row with no calendar row to change is left alone, not failed: nothing
+    // was attempted, so it says nothing about whether S4 is accepting posts.
+    if (!result.ok && !result.skipped) failures += 1;
 
     state.run.results.push({
       tech: payload.tech_id,
@@ -454,11 +558,17 @@ async function runPlan(dryRun) {
       days: payload.days,
       why: payload.source || "",
       ok: !!result.ok,
+      skipped: !!result.skipped,
       detail: result.detail || "",
       body: result.body,
     });
     state.run.index = i + 1;
-    if (!result.ok && !(dryRun && unmapped)) {
+    if (result.skipped && !dryRun) {
+      note("warn", `Skipped: ${payload.tech_id} ${payload.start_date}→${payload.end_date}`, {
+        shift: payload.shift_time,
+        detail: result.detail,
+      });
+    } else if (!result.ok && !result.skipped && !(dryRun && unmapped)) {
       note("error", `Refused: ${payload.tech_id} ${payload.start_date}→${payload.end_date}`, {
         shift: payload.shift_time,
         detail: result.detail,
@@ -494,7 +604,8 @@ async function runPlan(dryRun) {
         done: state.run.index,
         of: state.run.total,
         accepted: ok,
-        refused: state.run.results.length - ok,
+        refused: state.run.results.filter((r) => !r.ok && !r.skipped).length,
+        skipped: state.run.results.filter((r) => r.skipped).length,
         stopped: state.run.stopped || false,
       }
     );
@@ -524,7 +635,12 @@ const handlers = {
     // it, which read as if a probe had just run.
     if (state.mapping && state.mapping.forPlanMonth !== plan.month) {
       state.mapping = null;
+      // The rows belong to that month's grid too.
+      state.grid = null;
       note("info", "Cleared a mapping from an earlier session");
+    } else if (state.mapping && state.grid) {
+      // Same month, new blocks: say how many of these find a row.
+      state.mapping.coverage = coverage(plan, state.mapping, state.grid);
     }
     note("ok", "Plan loaded", {
       month: plan.month,
@@ -552,6 +668,20 @@ const handlers = {
       let host = null;
       let candidates = [];
       let gridSamples = [];
+
+      // Every cell the grid offers, keyed later by person and day.
+      const grid = { signature: null, cells: [], sources: [], calls: [] };
+      const takeGrid = (url, found) => {
+        if (!found) return;
+        if (!grid.signature && found.signature) grid.signature = found.signature;
+        if (found.cells && found.cells.length) {
+          grid.cells = grid.cells.concat(found.cells);
+          grid.sources.push({ url, cells: found.cells.length });
+        }
+        (found.calls || []).forEach((call) => {
+          if (grid.calls.length < 3) grid.calls.push(call);
+        });
+      };
 
       const consider = (url, forms, fetched) => {
         const read = readPage(forms, plan);
@@ -584,6 +714,7 @@ const handlers = {
           continue;
         }
         consider(tab.url, reply.forms, false);
+        takeGrid(tab.url, reply.grid);
         if (!host) host = tab;
         if (reply.candidates && reply.candidates.length) {
           candidates = candidates.concat(reply.candidates);
@@ -630,8 +761,62 @@ const handlers = {
             });
             continue;
           }
-          const read = consider(url, reply.forms, true);
-          if (isComplete(read)) break;
+          consider(url, reply.forms, true);
+          takeGrid(url, reply.grid);
+        }
+      }
+
+      // The same cell can turn up on several pages; keep one per cal_id.
+      const byId = new Map();
+      grid.cells.forEach((cell) => {
+        const key = cell.cal_id || `${cell.user}|${cell.date}`;
+        if (!byId.has(key)) byId.set(key, cell);
+      });
+      grid.cells = [...byId.values()];
+      note(grid.cells.length ? "ok" : "warn", "Read the grid's calendar rows", {
+        cells: grid.cells.length,
+        popupFound: !!grid.signature,
+        sources: grid.sources.map((src) => `${src.url} (${src.cells})`),
+      });
+
+      // Open one real cell's editor. Read with a bare cal_id, S4 renders the
+      // editor blank — no categories, no shift times, no row ids. Read against a
+      // real row, it renders the form it actually expects back.
+      if (host && grid.cells.length) {
+        // A row that really exists, in the plan's month, on this team if the
+        // plan says which.
+        const real = grid.cells.filter(
+          (cell) => /^\d+$/.test(String(cell.cal_id || "")) && Number(cell.cal_id) > 0
+        );
+        const inMonth = real.filter((cell) =>
+          (S4Mapping.normaliseDate(cell.date) || "").startsWith(plan.month)
+        );
+        const sampleCell =
+          inMonth.find((cell) => String(cell.team) === String(plan.team_id)) ||
+          inMonth[0] ||
+          real[0] ||
+          grid.cells[0];
+        const url = new URL(
+          S4Mapping.editorUrl(sampleCell, grid.signature),
+          `${new URL(host.url).origin}/`
+        ).href;
+        try {
+          const reply = await askTab(host.id, { type: "probeUrl", url });
+          if (reply.ok) {
+            consider(url, reply.forms, true);
+            note("ok", "Opened a real shift in the editor", {
+              url,
+              cal_id: sampleCell.cal_id,
+              date: sampleCell.date,
+            });
+          } else {
+            note("warn", "Could not open a real shift in the editor", {
+              url,
+              detail: reply.detail || `HTTP ${reply.status}`,
+            });
+          }
+        } catch (error) {
+          note("warn", "Could not open a real shift in the editor", { url, error: error.message });
         }
       }
 
@@ -673,7 +858,12 @@ const handlers = {
       const categoryValues = {};
       const staffValues = {};
       const contributed = {};
-      pages.forEach((entry) => {
+      // The page we post to speaks first: its option values are the ones the
+      // form will actually accept, and they need not match the timings page.
+      const ordered = pages
+        .filter((entry) => entry.url === chosen.url)
+        .concat(pages.filter((entry) => entry.url !== chosen.url));
+      ordered.forEach((entry) => {
         const from = entry.url;
         const add = (target, source, label) => {
           Object.entries(source).forEach(([key, value]) => {
@@ -737,6 +927,26 @@ const handlers = {
           forms: summariseForms(entry.forms),
         })),
       };
+
+      state.grid = {
+        signature: grid.signature,
+        cells: grid.cells,
+        sources: grid.sources,
+        calls: grid.calls,
+        readAt: new Date().toISOString(),
+      };
+      state.mapping.gridCells = state.grid.cells.length;
+      state.mapping.coverage = coverage(plan, state.mapping, state.grid);
+      note(
+        state.mapping.coverage.missing ? "warn" : "ok",
+        "Matched plan blocks to calendar rows",
+        {
+          resolved: state.mapping.coverage.resolved,
+          of: state.mapping.coverage.total,
+          missing: state.mapping.coverage.missing,
+          examples: state.mapping.coverage.examples,
+        }
+      );
 
       const shortfall = S4Mapping.missingMapping(state.mapping, plan);
       const incomplete =
@@ -827,12 +1037,40 @@ const handlers = {
         borrowedFields: mapping.borrowedFields,
         baseFields: mapping.baseFields,
         gridSamples: mapping.gridSamples,
+        coverage: mapping.coverage,
+        grid: state.grid
+          ? {
+              cells: state.grid.cells.length,
+              sources: state.grid.sources,
+              popup: state.grid.signature
+                ? { params: state.grid.signature.params, source: state.grid.signature.source }
+                : null,
+              calls: state.grid.calls,
+              // Enough of one person's month to see whether each day is its
+              // own row or one row spans several.
+              sampleCells: state.grid.cells.slice(0, 6),
+              distinctRowIds: new Set(state.grid.cells.map((c) => c.cal_id)).size,
+              cellsSpanningDays: state.grid.cells.filter(
+                (c) => c.start_date && c.end_date && c.start_date !== c.end_date
+              ).length,
+            }
+          : null,
         // Exactly what one post would carry, which is the thing to check
         // before anything is written.
         sampleBody:
           plan && plan.assignments && plan.assignments.length
             ? S4Mapping.buildBody(plan.assignments[0], mapping)
             : null,
+        // The first rows of the last run as built — after a dry run these
+        // are real editors read for real rows, cal_id and all.
+        firstBodies: state.run.results.slice(0, 3).map((r) => ({
+          tech: r.tech,
+          from: r.from,
+          to: r.to,
+          ok: r.ok,
+          detail: r.detail,
+          body: r.body,
+        })),
         // Every page read, with the raw field names and dropdown options of
         // each. A mismatch always comes down to these, and S4 spreads the
         // pieces over several pages, so one page's worth is not enough.

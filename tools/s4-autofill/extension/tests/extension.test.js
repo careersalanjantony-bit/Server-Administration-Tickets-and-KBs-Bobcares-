@@ -103,7 +103,7 @@ test("a dry run sends nothing at all", async () => {
 });
 
 test("a live run refuses to start when the mapping is incomplete", async () => {
-  const harness = load({ techIds: TECHS, selects: false });
+  const harness = load({ techIds: TECHS, selects: false, editors: false });
   await harness.send("setPlan", { plan: samplePlan() });
   await harness.send("setSettings", { settings: { allowWrites: true } });
   await harness.send("probe");
@@ -489,8 +489,9 @@ function gridHarness(extra = {}) {
 }
 
 test("probing the month grid alone finds almost nothing", async () => {
-  // Without following the link this is what the person saw.
-  const harness = load({ techIds: TECHS, grid: EDITOR_URL });
+  // Without following the link, and with no row's editor to open, this is
+  // what the person saw.
+  const harness = load({ techIds: TECHS, grid: EDITOR_URL, editors: false });
   await harness.send("setPlan", { plan: samplePlan() });
   const state = await harness.send("probe");
   const found = state.mapping ? Object.keys(state.mapping.shiftTimeValues).length : 0;
@@ -544,6 +545,7 @@ test("a grid with no editor to find reports what is missing rather than erroring
   const harness = load({
     techIds: TECHS,
     grid: "https://s4.inhouse.net/index.php?action=nothing",
+    editors: false,
   });
   await harness.send("setPlan", { plan: samplePlan() });
   const state = await harness.send("probe");
@@ -565,6 +567,7 @@ test("an incomplete mapping still blocks a live run", async () => {
   const harness = load({
     techIds: TECHS,
     grid: "https://s4.inhouse.net/index.php?action=nothing",
+    editors: false,
   });
   await harness.send("setPlan", { plan: samplePlan() });
   await harness.send("setSettings", { settings: { allowWrites: true } });
@@ -600,6 +603,7 @@ test("a dry run against a half-mapped page still lists every row", async () => {
   const harness = load({
     techIds: TECHS,
     grid: "https://s4.inhouse.net/index.php?action=nothing",
+    editors: false,
   });
   await harness.send("setPlan", { plan: samplePlan() });
   await harness.send("probe");
@@ -748,6 +752,7 @@ test("an incomplete mapping is logged as a problem, with what is missing", async
   const harness = load({
     techIds: TECHS,
     grid: "https://s4.inhouse.net/index.php?action=nothing",
+    editors: false,
   });
   await harness.send("setPlan", { plan: samplePlan() });
   const state = await harness.send("probe");
@@ -841,6 +846,7 @@ test("diagnostics say what is missing and where it looked", async () => {
   const harness = load({
     techIds: TECHS,
     grid: "https://s4.inhouse.net/index.php?action=nothing",
+    editors: false,
   });
   await harness.send("setPlan", { plan: samplePlan() });
   await harness.send("probe");
@@ -1329,72 +1335,454 @@ test("splitDate handles S4's date format", () => {
 });
 
 // ------------------------------------- a post must know which row it changes
-// Probed at chkshift&cal_id= with nothing after the equals, S4 renders the
-// form with every identifying hidden field blank. Posting that tells it
-// nothing about which shift to change.
+// cal_id is per person per day. S4's grid hands each cell's id to popup(),
+// which opens the editor for that one row, and the editor renders that row's
+// hidden fields. So every block has to find its own cell, open its own editor
+// and post back what that editor rendered: one cal_id for the whole month is
+// wrong for every row but one.
 
-function blankRowMapping(harness) {
-  const mapping = renderedMapping(harness);
-  mapping.baseFields.cal_id = "";
-  mapping.baseFields.tid = "";
-  return mapping;
+const { makeEditorDocument, gridCellsFor, POPUP_SOURCE } = require("./harness.js");
+
+const POPUP_HTML = `<script language="JavaScript"> <!-- ${POPUP_SOURCE} //--></script>`;
+
+const NIGHT_CELL = {
+  cal_id: "98765", date: "2026-10-01", user: "2431", team: "6", time: "22:58",
+  duration: "480", cat_id: "1", start_date: "2026-10-01", end_date: "2026-10-31",
+  co_flag: "N", comment: "", referer_team_id: "",
+};
+
+const NIGHT_EDITOR =
+  "index.php?action=chkshift&cal_id=98765&cal_date=2026-10-01&cal_user_id=2431" +
+  "&cal_team_id=6&cal_time=22%3A58&cal_duration=480&cal_cat_id=1&sdate=2026-10-01" +
+  "&edate=2026-10-31&co_flag=N&comment=&referer_team_id=6";
+
+/** The cal_id the fixture grid gives a person (by position) on an October day. */
+function calIdFor(techIndex, day) {
+  const cell = gridCellsFor(TECHS)[techIndex * 31 + day - 1];
+  return cell.cal_id;
 }
 
-test("a live run is refused when cal_id came back empty", async () => {
-  const harness = load({ techIds: TECHS });
+function octoberRows(count, overrides = {}) {
+  return Array.from({ length: count }, (_, i) =>
+    Object.assign(
+      {
+        tech_id: "mojin.t", category: "W", slot_id: "s0", shift_time: "06:58am-02:58pm",
+        start_date: `${String(i + 1).padStart(2, "0")}-Oct-2026`,
+        end_date: `${String(i + 1).padStart(2, "0")}-Oct-2026`,
+        days: 1, time: "06:58", duration_min: 480, reason: "x", source: "minimum",
+      },
+      overrides
+    )
+  );
+}
+
+test("popup()'s arguments are read the way S4 writes them", () => {
+  const { parseCallArgs } = load({ techIds: TECHS }).S4Mapping;
+  assert.deepStrictEqual(
+    [...parseCallArgs(`'98765','2026-10-01','2431','6','22:58','480','1','night, cover','')`)],
+    ["98765", "2026-10-01", "2431", "6", "22:58", "480", "1", "night, cover", ""]
+  );
+  assert.deepStrictEqual([...parseCallArgs(`98765, "2026-10-01", 2431)`)], [
+    "98765", "2026-10-01", "2431",
+  ]);
+  assert.deepStrictEqual([...parseCallArgs(`'it\\'s', 'x')`)], ["it's", "x"]);
+  assert.strictEqual(parseCallArgs(`'98765', '2026-10-01'`), null, "an unclosed call is no call");
+});
+
+test("popup()'s own definition gives its parameters and the address it opens", () => {
+  const { popupSignature, editorUrl, KNOWN_POPUP_PARAMS } = load({ techIds: TECHS }).S4Mapping;
+  const signature = popupSignature(POPUP_HTML);
+  assert.ok(signature, "the definition should be found");
+  assert.deepStrictEqual([...signature.params], [...KNOWN_POPUP_PARAMS]);
+  assert.strictEqual(editorUrl(NIGHT_CELL, signature), NIGHT_EDITOR);
+});
+
+test("without popup()'s definition the address is still built in S4's order", () => {
+  const { editorUrl } = load({ techIds: TECHS }).S4Mapping;
+  assert.strictEqual(editorUrl(NIGHT_CELL, null), NIGHT_EDITOR);
+});
+
+test("the referer team falls back to the cell's own team, as popup() does", () => {
+  const { editorUrl } = load({ techIds: TECHS }).S4Mapping;
+  assert.match(editorUrl(NIGHT_CELL, null), /referer_team_id=6$/);
+  const referred = Object.assign({}, NIGHT_CELL, { referer_team_id: "9" });
+  assert.match(editorUrl(referred, null), /referer_team_id=9$/);
+});
+
+test("any date S4 might hand a cell is read the same way", () => {
+  const { normaliseDate } = load({ techIds: TECHS }).S4Mapping;
+  ["2026-10-01", "2026-10-01 00:00:00", "01-Oct-2026", "1-oct-2026", "01/10/2026", "20261001"]
+    .forEach((text) => assert.strictEqual(normaliseDate(text), "2026-10-01", text));
+  assert.strictEqual(normaliseDate("nonsense"), null);
+  assert.strictEqual(normaliseDate(""), null);
+});
+
+test("two cells for one person and day are counted, not silently merged", () => {
+  const { indexCells } = load({ techIds: TECHS }).S4Mapping;
+  const { index, duplicates } = indexCells([
+    { user: "1", date: "2026-10-01", cal_id: "a" },
+    { user: "1", date: "01-Oct-2026", cal_id: "b" },
+    { user: "", date: "2026-10-01", cal_id: "c" },
+    { user: "2", date: "junk", cal_id: "d" },
+  ]);
+  assert.deepStrictEqual(Object.keys(index), ["1|2026-10-01"]);
+  assert.strictEqual(index["1|2026-10-01"].cal_id, "a", "the first one is kept");
+  assert.strictEqual(duplicates, 1);
+});
+
+test("radios and checkboxes are only sent back when ticked", () => {
+  const { baseFieldsOf } = load({ techIds: TECHS }).S4Mapping;
+  const base = baseFieldsOf(
+    [
+      {
+        name: "change_shift",
+        inputs: [
+          { name: "hcl_co", type: "checkbox", value: "B", checked: false },
+          { name: "hcl_co", type: "checkbox", value: "NB", checked: false },
+          { name: "shift_comment", type: "radio", value: "1", checked: false },
+          { name: "shift_comment", type: "radio", value: "4", checked: true },
+          { name: "shift_comment", type: "radio", value: "7", checked: false },
+        ],
+        selects: [],
+      },
+    ],
+    "change_shift"
+  );
+  assert.ok(!("hcl_co" in base), "an unticked checkbox is not submitted");
+  assert.strictEqual(base.shift_comment, "4", "the ticked radio, not the last one");
+});
+
+test("a dropdown goes back with the value it showed", () => {
+  const { baseFieldsOf } = load({ techIds: TECHS }).S4Mapping;
+  const base = baseFieldsOf(
+    [
+      {
+        name: "change_shift",
+        inputs: [],
+        selects: [
+          { name: "members", selected: "", options: [] },
+          { name: "cat", selected: "3", options: [] },
+          { name: "old", options: [] },
+        ],
+      },
+    ],
+    "change_shift"
+  );
+  assert.strictEqual(base.members, "");
+  assert.strictEqual(base.cat, "3");
+  assert.ok(!("old" in base), "nothing is invented for a dropdown that was not read");
+});
+
+test("the probe reads every cell of the month grid", async () => {
+  const { state } = await ready();
+  assert.strictEqual(state.grid.cells.length, TECHS.length * 31);
+  assert.ok(state.grid.signature, "popup()'s definition should have been found");
+  assert.strictEqual(state.grid.cells[0].cal_id, calIdFor(0, 1));
+  const read = state.log.find((e) => e.message === "Read the grid's calendar rows");
+  assert.strictEqual(read.level, "ok");
+});
+
+test("every block is matched to a calendar row before anything is sent", async () => {
+  const { state } = await ready();
+  assert.deepStrictEqual(
+    { total: state.mapping.coverage.total, resolved: state.mapping.coverage.resolved },
+    { total: 2, resolved: 2 }
+  );
+});
+
+test("cells wired up without onclick are still read from the markup", async () => {
+  const PAGE = "https://s4.inhouse.net/index.php?action=view_shift&t=6&y=2026&m=10&alt=1";
+  const markup =
+    POPUP_HTML +
+    `<td ondblclick="popup(&#39;555&#39;,&#39;2026-10-01&#39;,&#39;200&#39;,&#39;6&#39;)">W</td>`;
+  const harness = load({
+    techIds: TECHS,
+    cells: false,
+    pages: { [PAGE]: "ALT" },
+    documents: {
+      ALT: { forms: [], querySelectorAll: () => [], documentElement: { innerHTML: markup } },
+    },
+  });
+  await harness.send("setPlan", { plan: samplePlan() });
+  await harness.send("setSettings", { settings: { editUrl: PAGE } });
+  const state = await harness.send("probe");
+  assert.deepStrictEqual(
+    state.grid.cells.map((c) => [c.cal_id, c.user]),
+    [["555", "200"]]
+  );
+});
+
+test("opening a real cell's editor from the grid finds the whole form", async () => {
+  const harness = load({ techIds: TECHS, grid: "https://s4.inhouse.net/index.php?action=nothing" });
+  await harness.send("setPlan", { plan: samplePlan() });
+  const state = await harness.send("probe");
+  assert.strictEqual(Object.keys(state.mapping.shiftTimeValues).length, 15);
+  assert.strictEqual(state.mapping.categoryValues.W, "W");
+  assert.ok(messages(state).includes("Opened a real shift in the editor"));
+  assert.ok(
+    harness.fetched.some((url) => /action=chkshift&cal_id=7\d{4}&/.test(url)),
+    `read: ${harness.fetched.join(", ")}`
+  );
+});
+
+test("each block is posted with its own row's cal_id", async () => {
+  const { harness } = await ready();
+  await harness.send("startRun", { dryRun: false });
+  assert.strictEqual(harness.posted.length, 2);
+  assert.strictEqual(harness.posted[0].body.cal_id, calIdFor(0, 1), "mojin.t on 1 October");
+  assert.strictEqual(harness.posted[1].body.cal_id, calIdFor(1, 1), "alan.j on 1 October");
+  assert.notStrictEqual(harness.posted[0].body.cal_id, harness.posted[1].body.cal_id);
+});
+
+test("each block opens the editor for its own row before posting", async () => {
+  const { harness } = await ready();
+  const before = harness.fetched.length;
+  await harness.send("startRun", { dryRun: false });
+  const opened = harness.fetched.slice(before);
+  assert.strictEqual(opened.length, 2);
+  assert.match(opened[0], new RegExp(`cal_id=${calIdFor(0, 1)}&.*cal_user_id=200&`));
+  assert.match(opened[1], new RegExp(`cal_id=${calIdFor(1, 1)}&.*cal_user_id=201&`));
+});
+
+test("the post goes to the editor form's own action", async () => {
+  const { harness } = await ready();
+  await harness.send("startRun", { dryRun: false });
+  assert.strictEqual(harness.posted[0].url, "https://s4.inhouse.net/index.php?action=chkshift");
+});
+
+test("what the row's editor rendered goes back with the post", async () => {
+  const { harness } = await ready();
+  await harness.send("startRun", { dryRun: false });
+  const [first] = harness.posted;
+  assert.strictEqual(first.body.tid, "6");
+  assert.strictEqual(first.body.view, "month");
+  assert.strictEqual(first.body.shift_comment, "1", "the ticked radio");
+  assert.ok(!("hcl_co" in first.body), "unticked checkboxes stay out");
+  assert.strictEqual(first.body.Edit, "Edit");
+});
+
+test("a block with no calendar row is skipped, not counted as a failure", async () => {
+  const plan = samplePlan({
+    assignments: octoberRows(4, { start_date: "05-Nov-2026", end_date: "05-Nov-2026" }).concat(
+      samplePlan().assignments
+    ),
+  });
+  const { harness } = await ready({ plan });
+  const run = await harness.send("startRun", { dryRun: false });
+  assert.ok(!run.stopped, `four misses must not trip the failure stop: ${run.note}`);
+  assert.strictEqual(harness.posted.length, 2);
+  const skipped = run.results.filter((r) => r.skipped);
+  assert.strictEqual(skipped.length, 4);
+  assert.match(skipped[0].detail, /no calendar row/);
+  assert.ok(skipped.every((r) => !r.ok));
+  const state = await harness.send("getState");
+  assert.strictEqual(state.log.filter((e) => /^Skipped: /.test(e.message)).length, 4);
+  assert.ok(
+    !state.log.some((e) => e.level === "error" && /^Refused: /.test(e.message)),
+    "a skip is not a refusal"
+  );
+});
+
+test("an editor rendered for somebody else stops that row", async () => {
+  const { harness } = await ready({
+    editor: (params, ids) => makeEditorDocument(params, ids, { user: "999" }),
+  });
+  const run = await harness.send("startRun", { dryRun: false });
+  assert.strictEqual(harness.posted.length, 0, "nothing may be posted to the wrong person");
+  assert.ok(!run.results[0].ok);
+  assert.match(run.results[0].detail, /999/);
+  assert.match(run.results[0].detail, /mojin\.t/);
+});
+
+test("an editor that comes back without a cal_id stops that row", async () => {
+  const { harness } = await ready({
+    editor: (params, ids) => makeEditorDocument(params, ids, { calId: "" }),
+  });
+  const run = await harness.send("startRun", { dryRun: false });
+  assert.strictEqual(harness.posted.length, 0);
+  assert.match(run.results[0].detail, /without a cal_id/);
+});
+
+test("an editor that cannot be opened stops that row", async () => {
+  const { harness } = await ready({ editors: false });
+  const run = await harness.send("startRun", { dryRun: false });
+  assert.strictEqual(harness.posted.length, 0);
+  assert.match(run.results[0].detail, /could not open this row's editor/);
+});
+
+test("a live run is refused when the grid's calendar rows were not read", async () => {
+  const harness = load({ techIds: TECHS, cells: false });
+  await harness.send("setPlan", { plan: samplePlan() });
+  await harness.send("setSettings", { settings: { allowWrites: true } });
+  await harness.send("probe");
+  const reply = await harness.send("startRun", { dryRun: false });
+  assert.ok(reply.error, "should refuse");
+  assert.match(reply.error, /calendar rows/);
+  assert.match(reply.error, /Find the shift form again/);
+  assert.strictEqual(harness.posted.length, 0);
+});
+
+test("a dry run still works without the grid's rows, and says why", async () => {
+  const harness = load({ techIds: TECHS, cells: false });
+  await harness.send("setPlan", { plan: samplePlan() });
+  await harness.send("probe");
+  const run = await harness.send("startRun", { dryRun: true });
+  assert.ok(!run.error, run.error);
+  assert.strictEqual(harness.posted.length, 0);
+  assert.strictEqual(run.results.length, 2);
+  assert.ok(run.results.every((r) => r.skipped && /no calendar row/.test(r.detail)));
+  const state = await harness.send("getState");
+  assert.ok(messages(state).some((m) => /no calendar rows/.test(m)));
+});
+
+test("a dry run opens a handful of real editors and posts nothing", async () => {
+  const { harness } = await ready({ plan: samplePlan({ assignments: octoberRows(12) }) });
+  const before = harness.fetched.length;
+  const run = await harness.send("startRun", { dryRun: true });
+  const opened = harness.fetched.slice(before);
+  assert.strictEqual(harness.posted.length, 0);
+  assert.ok(opened.length > 0 && opened.length <= 5, `opened ${opened.length}`);
+  assert.ok(opened.every((url) => /action=chkshift&cal_id=\d+/.test(url)));
+  assert.strictEqual(run.results.length, 12);
+  assert.ok(run.results.every((r) => r.ok), JSON.stringify(run.results.map((r) => r.detail)));
+});
+
+test("every dry-run row shows its own row's cal_id, opened or not", async () => {
+  const { harness } = await ready({ plan: samplePlan({ assignments: octoberRows(8) }) });
+  const run = await harness.send("startRun", { dryRun: true });
+  assert.match(run.results[0].detail, /opened/);
+  assert.strictEqual(run.results[0].body.cal_id, calIdFor(0, 1));
+  assert.match(run.results[7].detail, /found/);
+  assert.strictEqual(run.results[7].body.cal_id, calIdFor(0, 8));
+});
+
+test("diagnostics show the grid, the coverage and the first real bodies", async () => {
+  const { harness } = await ready();
+  await harness.send("startRun", { dryRun: true });
+  const diag = await harness.send("diagnostics");
+  assert.strictEqual(diag.mapping.grid.cells, TECHS.length * 31);
+  assert.strictEqual(diag.mapping.grid.popup.params.length, 12);
+  assert.strictEqual(diag.mapping.coverage.resolved, 2);
+  assert.strictEqual(diag.mapping.firstBodies[0].body.cal_id, calIdFor(0, 1));
+});
+
+// ------------------------------------------------------------------ the UI page
+// render() read a value one line before declaring it, so from the moment a
+// mapping existed every render threw: the buttons, the status and the log all
+// froze at whatever they last showed. Nothing exercised the page, so nothing
+// noticed.
+
+const UI_ROOT = require("path").join(__dirname, "..");
+
+function fakeElement() {
+  const el = {
+    textContent: "", hidden: false, disabled: false, checked: false, value: "",
+    title: "", open: false, className: "", style: {}, children: [],
+    scrollTop: 0, clientHeight: 0, scrollHeight: 0,
+    classList: { add() {}, remove() {}, toggle() {} },
+    append(...items) { el.children.push(...items); },
+    appendChild(item) { el.children.push(item); return item; },
+    addEventListener() {}, click() {}, remove() {},
+  };
+  el.tBodies = [{ textContent: "", appendChild(item) { el.children.push(item); return item; } }];
+  return el;
+}
+
+function loadUi(state) {
+  const vm = require("vm");
+  const fs = require("fs");
+  const path = require("path");
+  const elements = {};
+  const context = {
+    console, URL, Blob: function Blob() {}, setTimeout, setInterval, clearInterval,
+    document: {
+      getElementById: (id) => (elements[id] = elements[id] || fakeElement()),
+      createElement: () => fakeElement(),
+      body: fakeElement(),
+    },
+    browser: {
+      runtime: {
+        sendMessage: async () => state,
+        getManifest: () => ({ version: "test" }),
+      },
+    },
+    navigator: { clipboard: { writeText: async () => {} } },
+    window: { confirm: () => false },
+  };
+  context.globalThis = context;
+  vm.createContext(context);
+  // The same scripts, in the same order, that ui.html loads.
+  const html = fs.readFileSync(path.join(UI_ROOT, "ui/ui.html"), "utf8");
+  [...html.matchAll(/<script src="([^"]+)"><\/script>/g)].forEach(([, src]) => {
+    const file = path.join(UI_ROOT, "ui", src);
+    vm.runInContext(fs.readFileSync(file, "utf8"), context, { filename: src });
+  });
+  return { render: context.render, $: (id) => context.document.getElementById(id) };
+}
+
+test("the UI renders a found mapping without throwing", async () => {
+  const { harness } = await ready();
+  const state = await harness.send("getState");
+  const ui = loadUi(state);
+  assert.doesNotThrow(() => ui.render(state));
+  assert.strictEqual(ui.$("live").disabled, false, ui.$("fillReason").textContent);
+  assert.strictEqual(ui.$("statusState").textContent, "Idle");
+});
+
+test("the UI says how many blocks found a calendar row", async () => {
+  const { harness } = await ready();
+  const state = await harness.send("getState");
+  const ui = loadUi(state);
+  ui.render(state);
+  assert.match(ui.$("mapInfo").textContent, /62 calendar rows/);
+  assert.match(ui.$("mapInfo").textContent, /2\/2 blocks matched to a row/);
+});
+
+test("the live button stays off until the grid's rows are read", async () => {
+  const harness = load({ techIds: TECHS, cells: false });
   await harness.send("setPlan", { plan: samplePlan() });
   await harness.send("setSettings", { settings: { allowWrites: true } });
   await harness.send("probe");
   const state = await harness.send("getState");
-  state.mapping.baseFields = { cal_id: "", tid: "", uid: "" };
-  const restarted = load({ techIds: TECHS, storage: { state } });
-  await restarted.send("setSettings", { settings: { allowWrites: true } });
-  const reply = await restarted.send("startRun", { dryRun: false });
-  assert.ok(reply.error, "should refuse");
-  assert.match(reply.error, /cal_id/);
-  assert.strictEqual(restarted.posted.length, 0);
+  const ui = loadUi(state);
+  ui.render(state);
+  assert.strictEqual(ui.$("live").disabled, true);
+  assert.match(ui.$("fillReason").textContent, /calendar rows were not read/);
 });
 
-test("the refusal names what is empty and what to do", async () => {
-  const harness = load({ techIds: TECHS });
-  await harness.send("setPlan", { plan: samplePlan() });
-  await harness.send("probe");
-  const state = await harness.send("getState");
-  state.mapping.baseFields = { cal_id: "", tid: "" };
-  const restarted = load({ techIds: TECHS, storage: { state } });
-  await restarted.send("setSettings", { settings: { allowWrites: true } });
-  const reply = await restarted.send("startRun", { dryRun: false });
-  assert.match(reply.error, /Open a shift in S4/i);
-});
-
-test("a dry run still works with an empty cal_id", async () => {
-  const harness = load({ techIds: TECHS });
-  await harness.send("setPlan", { plan: samplePlan() });
-  await harness.send("probe");
-  const state = await harness.send("getState");
-  state.mapping.baseFields = { cal_id: "", tid: "" };
-  const restarted = load({ techIds: TECHS, storage: { state } });
-  const run = await restarted.send("startRun", { dryRun: true });
-  assert.ok(!run.error, run.error);
-  assert.strictEqual(restarted.posted.length, 0);
-});
-
-test("a populated cal_id lets the run proceed", async () => {
-  const harness = gridHarness();
-  await harness.send("setPlan", { plan: samplePlan() });
-  await harness.send("setSettings", { settings: { delayMs: 0, allowWrites: true } });
-  await harness.send("probe");
-  const state = await harness.send("getState");
-  state.mapping.baseFields = { cal_id: "98765", tid: "6" };
-  const restarted = load({
-    techIds: TECHS,
-    storage: { state },
-    grid: EDITOR_URL,
-    pages: { [EDITOR_URL]: "E" },
-    documents: { E: makeDocument(TECHS, {}) },
+test("skipped rows are counted apart from failures", async () => {
+  const plan = samplePlan({
+    assignments: octoberRows(3, { start_date: "05-Nov-2026", end_date: "05-Nov-2026" }).concat(
+      samplePlan().assignments
+    ),
   });
-  await restarted.send("setSettings", { settings: { delayMs: 0, allowWrites: true } });
-  const run = await restarted.send("startRun", { dryRun: false });
-  assert.ok(!run.error, run.error);
-  assert.strictEqual(restarted.posted.length, 2);
+  const { harness } = await ready({ plan });
+  await harness.send("startRun", { dryRun: false });
+  const state = await harness.send("getState");
+  const ui = loadUi(state);
+  ui.render(state);
+  assert.strictEqual(ui.$("counts").textContent, "2 ok, 0 failed, 3 skipped (no calendar row)");
+});
+
+test("somebody on two teams is matched to this team's cell", () => {
+  const { indexCells } = load({ techIds: TECHS }).S4Mapping;
+  const cells = [
+    { user: "200", date: "2026-10-01", cal_id: "111", team: "9" },
+    { user: "200", date: "2026-10-01", cal_id: "222", team: "6" },
+  ];
+  assert.strictEqual(indexCells(cells, 6).index["200|2026-10-01"].cal_id, "222");
+  assert.strictEqual(indexCells(cells).index["200|2026-10-01"].cal_id, "111");
+});
+
+test("a cell with no row id is skipped rather than opened", async () => {
+  const cells = gridCellsFor(TECHS).map((cell, i) =>
+    i === 0 ? Object.assign({}, cell, { cal_id: "" }) : cell
+  );
+  const { harness } = await ready({ cells });
+  const before = harness.fetched.length;
+  const run = await harness.send("startRun", { dryRun: false });
+  assert.ok(run.results[0].skipped, run.results[0].detail);
+  assert.match(run.results[0].detail, /no row id/);
+  assert.strictEqual(harness.posted.length, 1, "the other block still goes in");
+  assert.ok(!harness.fetched.slice(before).some((url) => /cal_id=&/.test(url)));
 });

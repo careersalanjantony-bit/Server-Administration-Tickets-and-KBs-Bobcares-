@@ -103,18 +103,45 @@ Two traps in that list. `duration_h` does **not** contain the substring
 `shift_comment` is a group of seven radio buttons, not a text field, so
 anything matching on "comment" has to check the control type first.
 
-**A post has to say which row it is changing.** `cal_id` is how S4 knows, and
-it is refused outright when empty — probing the editor without one leaves
-`cal_id`, `tid`, `view` and `prv_caldate` all blank, and a post carrying those
-is at best ignored. The editor's address, opened from a real shift, carries a
-`cal_id`; paste it into the editor page box.
+**Every block changes its own calendar row.** `cal_id` is per person per
+day, and the month grid is the only place it comes from. Each cell calls
 
-**The page only fills in against a real calendar row.** Fetched as
-`chkshift&cal_id=` with nothing after the equals, S4 still renders the form,
-but `cat` comes back with no options at all and `shift_time` with only Flexy.
-The extension therefore scrapes calendar ids out of the grid's markup and pins
-them onto that url. If it cannot find one, open a shift in S4 and paste the
-editor's address into the editor page box — that address carries a `cal_id`.
+    popup(cal_id, date, user, team, time, duration, cat_id,
+          start_date, end_date, co_flag, comment, referer_team_id)
+
+and `popup()` opens `index.php?action=chkshift&cal_id=…&cal_date=…&cal_user_id=…`
+with those values. So the probe reads every `popup(…)` call in the grid (the
+open tab first, since that is where any javascript-drawn cells exist, then the
+month grid fetched by address), keeps one cell per `cal_id`, and indexes them by
+S4 user id and date. `popup()`'s own definition is read off the page too, so
+the editor address is built the way S4 builds it, including its fallback of
+`referer_team_id` to the cell's own team.
+
+A run then does this for each block:
+
+1. Find the cell for that person (their S4 user id) on the block's first day.
+   No cell, or a cell with no row id, and the block is **skipped** — listed in
+   the results, not counted as a failure, nothing sent.
+2. Open that cell's editor, exactly as clicking it would.
+3. Build the body from what that editor rendered — its `cal_id`, `tid`, `view`,
+   `prv_caldate`, the ticked radios, each dropdown's current value — and
+   overwrite only the fields being set.
+4. Refuse the row if the editor came back without a `cal_id`, for a different
+   user than the block is about, or without the category or shift time asked
+   for. Otherwise post it to the editor form's own action.
+
+A live run is refused outright if the grid's rows were never read. A dry run
+opens the first five resolvable rows' editors (reading is harmless) so the
+bodies it shows are what S4 would really get; the rest show their own row's
+`cal_id` from the grid without being opened.
+
+Read against a bare `chkshift&cal_id=`, S4 renders the editor with `cat` empty
+and `shift_time` holding only Flexy. The probe therefore also opens one real
+cell's editor, which is where the category and shift-time values come from.
+
+Radios and checkboxes go back only when ticked. Echoing every one posted the
+last of each group — `hcl_co=NB` and `shift_comment=2` on every row whether or
+not either was selected.
 
 ### A post carries the whole form
 
@@ -249,7 +276,7 @@ It writes to a live roster, so:
 node --test
 ```
 
-102 tests. They load the real `background.js` and `content/s4page.js` into a VM
+129 tests. They load the real `background.js` and `content/s4page.js` into a VM
 with a stand-in `browser` API and a form shaped like S4's, and cover the things
 that would actually corrupt a roster: that duration fields are never mistaken
 for the clock fields, that midnight and noon do not post as hour zero, that a
@@ -271,7 +298,16 @@ lot.
 
 The fixture serves S4's real two-page shape — a grid with no editor on it,
 linking to an editor page that has one — because that is the layout that broke
-the first three attempts at this.
+the first three attempts at this. Its grid carries S4's own `popup()`
+definition and a cell per person per October day, and fetching a cell's editor
+returns that row's form with its own `cal_id`, so the per-row lookup, the
+wrong-user and blank-`cal_id` guards, skipped rows and the dry run's editor
+limit are all exercised.
+
+The UI page is loaded too, with the scripts `ui.html` names, and rendered
+against real state. `render()` once read a value a line before declaring it;
+from then on every render threw once a mapping existed, and the buttons,
+status and log stopped updating. Nothing ran the page, so nothing noticed.
 
 The real October plan — 534 blocks, 868 tech-days — runs through the harness
 with all 15 shift times, all 28 staff and all 12 fields mapped, and nothing
@@ -281,11 +317,18 @@ left over.
 
 ## What has not been tested
 
-**A live post.** The field names and dropdown values come from a real probe,
-but no body has ever been accepted by S4 — the one thing still unknown is
-whether `cal_id` can be reused across rows or has to name each one. Do the dry
-run, read the body it prints, and check it against what S4 shows when you edit
-a shift by hand.
+**A live post.** Nothing has been written to S4 yet. Still open:
+
+- **Multi-day blocks.** A block posts once, to the row for its first day, with
+  the block's full date range in `startday`…`endyear`. Whether S4 applies that
+  range or only changes the one row is not known yet. Diagnostics now report
+  `distinctRowIds` and `cellsSpanningDays` for the grid, which answer it.
+- **Category values.** They only appear in an editor opened for a real row, so
+  the first probe with this build is the first time they will be seen.
+
+Do the dry run, press *Copy diagnostics*, and check `grid.cells`,
+`coverage.resolved` and `firstBodies` — the latter are bodies built from real
+editors for real rows — against what S4 shows when you edit a shift by hand.
 
 The real S4. I have never been able to reach it, so the form here is a stand-in
 built from screenshots of the edit popup. The field names and dropdown values

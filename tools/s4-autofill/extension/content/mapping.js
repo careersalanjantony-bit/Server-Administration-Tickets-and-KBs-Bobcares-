@@ -281,13 +281,205 @@
     (form.inputs || []).forEach((input) => {
       const type = (input.type || "text").toLowerCase();
       if (!input.name || type === "password") return;
+      if (type === "radio" || type === "checkbox") {
+        // Only what is ticked is submitted. Echoing every option would post
+        // the last one — the probe showed hcl_co=NB and shift_comment=2 going
+        // out on every row whether or not either was selected.
+        if (input.checked) base[input.name] = input.value || "on";
+        return;
+      }
       if (type === "hidden" || type === "submit") {
         base[input.name] = input.value || "";
       } else if (input.value) {
         base[input.name] = input.value;
       }
     });
+    // A dropdown is submitted with whatever it shows. Leaving the ones the
+    // mapping does not fill out of the post would blank them on S4's side.
+    (form.selects || []).forEach((select) => {
+      if (!select.name || select.selected === undefined || select.selected === null) return;
+      if (!(select.name in base)) base[select.name] = String(select.selected);
+    });
     return base;
+  }
+
+  // ------------------------------------------------------------ the grid
+  //
+  // Every cell in S4's month grid opens its editor through
+  //   popup(cal_id, date, user, team, time, duration, cat_id,
+  //         start_date, end_date, co_flag, comment, referer_team_id)
+  // which window.open()s index.php?action=chkshift with those values in the
+  // query string. cal_id is per person per day, so the grid is the only place
+  // to learn which row a shift block has to change.
+
+  const KNOWN_POPUP_PARAMS = [
+    "cal_id", "date", "user", "team", "time", "duration", "cat_id",
+    "start_date", "end_date", "co_flag", "comment", "referer_team_id",
+  ];
+
+  function readQuoted(text, i) {
+    const quote = text[i];
+    let value = "";
+    i += 1;
+    while (i < text.length && text[i] !== quote) {
+      if (text[i] === "\\" && i + 1 < text.length) {
+        value += text[i + 1];
+        i += 2;
+        continue;
+      }
+      value += text[i];
+      i += 1;
+    }
+    return { value, next: i + 1 };
+  }
+
+  /** The arguments of a call, given the text just after its "(". */
+  function parseCallArgs(text) {
+    const args = [];
+    let current = "";
+    let depth = 0;
+    let i = 0;
+    while (i < text.length) {
+      const ch = text[i];
+      if (ch === "'" || ch === '"') {
+        const quoted = readQuoted(text, i);
+        current += quoted.value;
+        i = quoted.next;
+        continue;
+      }
+      if (ch === "(") depth += 1;
+      if (ch === ")") {
+        if (depth === 0) {
+          if (current.trim() !== "" || args.length) args.push(current.trim());
+          return args;
+        }
+        depth -= 1;
+      }
+      if (ch === "," && depth === 0) {
+        args.push(current.trim());
+        current = "";
+        i += 1;
+        continue;
+      }
+      current += ch;
+      i += 1;
+    }
+    return null;
+  }
+
+  /** "a"+x+"b" as literal and parameter parts, up to a top-level , or ). */
+  function parseConcat(text) {
+    const parts = [];
+    let i = 0;
+    while (i < text.length) {
+      const ch = text[i];
+      if (/[\s+]/.test(ch)) {
+        i += 1;
+        continue;
+      }
+      if (ch === "," || ch === ")") return parts.length ? parts : null;
+      if (ch === "'" || ch === '"') {
+        const quoted = readQuoted(text, i);
+        parts.push({ lit: quoted.value });
+        i = quoted.next;
+        continue;
+      }
+      const ident = /^[A-Za-z_$][\w$.]*/.exec(text.slice(i));
+      if (!ident) return null;
+      i += ident[0].length;
+      if (text[i] === "(") {
+        // encodeURIComponent(comment) and the like: take the inner name.
+        const close = text.indexOf(")", i);
+        if (close < 0) return null;
+        parts.push({ ref: text.slice(i + 1, close).trim(), wrap: ident[0] });
+        i = close + 1;
+        continue;
+      }
+      parts.push({ ref: ident[0] });
+    }
+    return null;
+  }
+
+  /** popup()'s parameter names and the address it opens, read off the page. */
+  function popupSignature(html) {
+    const def = /function\s+popup\s*\(([^)]*)\)/.exec(html || "");
+    if (!def) return null;
+    const params = def[1].split(",").map((p) => p.trim()).filter(Boolean);
+    const body = html.slice(def.index, def.index + 4000);
+    const open = /window\.open\s*\(/.exec(body);
+    const template = open ? parseConcat(body.slice(open.index + open[0].length)) : null;
+    return { params, template, source: body.slice(0, 1200) };
+  }
+
+  /** The editor address for one grid cell, built the way popup() builds it. */
+  function editorUrl(cell, signature) {
+    const values = Object.assign({}, cell);
+    // popup() falls back to the cell's own team when no referer is given.
+    if (!values.referer_team_id && values.team) values.referer_team_id = values.team;
+    const value = (name) =>
+      values[name] === undefined || values[name] === null ? "" : String(values[name]);
+    const template = signature && signature.template;
+    if (template && template.length) {
+      return template
+        .map((part) => (part.lit !== undefined ? part.lit : encodeURIComponent(value(part.ref))))
+        .join("");
+    }
+    const pairs = [
+      ["cal_id", "cal_id"], ["cal_date", "date"], ["cal_user_id", "user"],
+      ["cal_team_id", "team"], ["cal_time", "time"], ["cal_duration", "duration"],
+      ["cal_cat_id", "cat_id"], ["sdate", "start_date"], ["edate", "end_date"],
+      ["co_flag", "co_flag"], ["comment", "comment"], ["referer_team_id", "referer_team_id"],
+    ];
+    return (
+      "index.php?action=chkshift&" +
+      pairs.map(([key, param]) => `${key}=${encodeURIComponent(value(param))}`).join("&")
+    );
+  }
+
+  const pad2 = (n) => String(n).padStart(2, "0");
+
+  /** Any date S4 might hand a cell, as YYYY-MM-DD. */
+  function normaliseDate(text) {
+    const t = String(text || "").trim();
+    let m;
+    if ((m = /^(\d{4})-(\d{1,2})-(\d{1,2})/.exec(t))) return `${m[1]}-${pad2(m[2])}-${pad2(m[3])}`;
+    if ((m = /^(\d{1,2})-([A-Za-z]{3})-(\d{4})$/.exec(t))) {
+      const month = MONTHS_SHORT.findIndex((x) => x.toLowerCase() === m[2].toLowerCase());
+      if (month >= 0) return `${m[3]}-${pad2(month + 1)}-${pad2(m[1])}`;
+    }
+    // S4 is an Indian system; a slashed date is day first.
+    if ((m = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(t))) return `${m[3]}-${pad2(m[2])}-${pad2(m[1])}`;
+    if ((m = /^(\d{4})(\d{2})(\d{2})$/.exec(t))) return `${m[1]}-${m[2]}-${m[3]}`;
+    if (/^\d{9,10}$/.test(t)) {
+      const d = new Date(Number(t) * 1000);
+      return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+    }
+    return null;
+  }
+
+  /**
+   * user|YYYY-MM-DD -> the cell for that person on that day.
+   *
+   * Somebody on two teams has a cell in each team's grid. When `team` is
+   * given, that team's cell wins; otherwise the first one read is kept.
+   */
+  function indexCells(cells, team) {
+    const index = {};
+    let duplicates = 0;
+    const ours = (cell) =>
+      team !== undefined && team !== null && String(cell.team) === String(team);
+    (cells || []).forEach((cell) => {
+      const iso = normaliseDate(cell.date);
+      if (!iso || !cell.user) return;
+      const key = `${cell.user}|${iso}`;
+      if (index[key]) {
+        duplicates += 1;
+        if (ours(cell) && !ours(index[key])) index[key] = cell;
+        return;
+      }
+      index[key] = cell;
+    });
+    return { index, duplicates };
   }
 
   /** Which mappings are still missing before a live run is safe. */
@@ -314,6 +506,8 @@
   const api = {
     timeKey, clean, matchOptions, suggestFields, buildBody, missingMapping,
     splitDate, baseFieldsOf,
+    KNOWN_POPUP_PARAMS, parseCallArgs, parseConcat, popupSignature, editorUrl,
+    normaliseDate, indexCells,
   };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.S4Mapping = api;

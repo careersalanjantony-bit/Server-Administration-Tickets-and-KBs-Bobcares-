@@ -47,11 +47,108 @@ function option(text, value) {
 }
 
 /** Which elements a CSS selector like "input[name], textarea[name]" asks for. */
-function pick(selector, inputs, selects) {
+function pick(selector, inputs, selects, clickables) {
   const out = [];
   if (/\binput\b|\btextarea\b/.test(selector)) out.push(...inputs);
   if (/\bselect\b/.test(selector)) out.push(...selects);
+  if (/\[onclick\]|a\[href\]/.test(selector)) out.push(...(clickables || []));
   return out;
+}
+
+// S4's own popup(), as the month grid defines it. Every cell calls it with
+// that cell's calendar row, and it opens the editor for exactly that row.
+const POPUP_SOURCE =
+  "var popupWin; function popup(cal_id,date,user,team,time,duration,cat_id," +
+  "start_date,end_date,co_flag,comment, referer_team_id){ " +
+  "// Set referer as current team if not set. Refs #120407\n" +
+  "if(!referer_team_id) { referer_team_id = team; } " +
+  'popupWin=window.open("index.php?action=chkshift&cal_id="+cal_id+"&cal_date="+date+' +
+  '"&cal_user_id="+user+"&cal_team_id="+team+"&cal_time="+time+"&cal_duration="+duration+' +
+  '"&cal_cat_id="+cat_id+"&sdate="+start_date+"&edate="+end_date+"&co_flag="+co_flag+' +
+  '"&comment="+comment+"&referer_team_id="+referer_team_id,"shift","width=620,height=640"); }';
+
+/** One calendar row per person per day of October, the way the grid holds them. */
+function gridCellsFor(techIds, { month = "2026-10", days = 31, team = "6" } = {}) {
+  const cells = [];
+  techIds.forEach((_, t) => {
+    for (let day = 1; day <= days; day += 1) {
+      cells.push({
+        cal_id: String(70000 + t * 100 + day),
+        date: `${month}-${String(day).padStart(2, "0")}`,
+        user: String(200 + t),
+        team,
+      });
+    }
+  });
+  return cells;
+}
+
+function popupCall(cell) {
+  return (
+    `popup('${cell.cal_id}','${cell.date}','${cell.user}','${cell.team}','06:58','480','1',` +
+    `'2026-10-01','2026-10-31','N','','')`
+  );
+}
+
+/** Grid cells as elements carrying their onclick, plus the markup around them. */
+function gridParts(cells) {
+  const clickables = cells.map((cell) => ({
+    getAttribute: (name) => (name === "onclick" ? popupCall(cell) : null),
+  }));
+  const html =
+    `<script language="JavaScript"><!-- ${POPUP_SOURCE} //--></script>` +
+    cells.map((cell) => `<td onclick="${popupCall(cell)}">W</td>`).join("");
+  return { clickables, html };
+}
+
+/**
+ * The editor S4 renders for one calendar row: its hidden fields filled in for
+ * that row, and the dropdowns populated. `user` overrides whom it renders for,
+ * and `calId` what it puts in the hidden cal_id — both are how a lookup gone
+ * wrong would show.
+ */
+function makeEditorDocument(params, techIds, overrides = {}) {
+  const calId = overrides.calId !== undefined ? overrides.calId : params.get("cal_id");
+  const user = overrides.user !== undefined ? overrides.user : params.get("cal_user_id");
+  const inputs = [
+    { name: "cal_id", type: "hidden", value: calId },
+    { name: "tid", type: "hidden", value: params.get("cal_team_id") || "" },
+    { name: "view", type: "hidden", value: "month" },
+    { name: "sdate", type: "text", value: "" },
+    { name: "edate", type: "text", value: "" },
+    { name: "stime_hr", type: "text", value: "" },
+    { name: "stime_min", type: "text", value: "" },
+    { name: "stime_ampm", type: "text", value: "" },
+    { name: "dur_hr", type: "text", value: "" },
+    { name: "dur_min", type: "text", value: "" },
+    { name: "reason", type: "textarea", value: "" },
+    { name: "log_reason", type: "textarea", value: "" },
+    { name: "hcl_co", type: "checkbox", value: "B", checked: false },
+    { name: "hcl_co", type: "checkbox", value: "NB", checked: false },
+    { name: "shift_comment", type: "radio", value: "1", checked: true },
+    { name: "shift_comment", type: "radio", value: "2", checked: false },
+    { name: "Edit", type: "submit", value: "Edit" },
+  ];
+  const selects = [
+    { name: "category", value: "W", options: CATEGORY_LABELS.map(([t, v]) => option(t, v)) },
+    {
+      name: "shift_time",
+      value: "1",
+      options: SLOT_LABELS.map((label, i) => option(label, String(i + 1))),
+    },
+    { name: "staff", value: user, options: techIds.map((id, i) => option(id, String(200 + i))) },
+  ];
+  const form = {
+    getAttribute: (name) =>
+      ({ name: "change_shift", action: "index.php?action=chkshift", method: "POST" }[name] ||
+        null),
+    querySelectorAll: (selector) => pick(selector, inputs, selects),
+  };
+  return {
+    forms: [form],
+    title: "S4",
+    querySelectorAll: (selector) => pick(selector, inputs, selects),
+  };
 }
 
 /**
@@ -60,7 +157,10 @@ function pick(selector, inputs, selects) {
  * `loose` reproduces what the month grid actually does: an empty
  * <form name="shift"> with the controls rendered elsewhere in the document.
  */
-function makeDocument(techIds, { selects = true, loose = false, noFields = false } = {}) {
+function makeDocument(
+  techIds,
+  { selects = true, loose = false, noFields = false, cells = gridCellsFor(techIds) } = {}
+) {
   const inputs = noFields ? [] : [
     { name: "sdate", type: "text", value: "" },
     { name: "edate", type: "text", value: "" },
@@ -96,11 +196,13 @@ function makeDocument(techIds, { selects = true, loose = false, noFields = false
     },
   };
 
+  const grid = gridParts(cells || []);
   return {
     forms: [form],
     title: "S4",
+    documentElement: { innerHTML: grid.html },
     querySelectorAll(selector) {
-      return pick(selector, inputs, selectEls);
+      return pick(selector, inputs, selectEls, grid.clickables);
     },
   };
 }
@@ -110,8 +212,9 @@ function makeDocument(techIds, { selects = true, loose = false, noFields = false
  * <form name="shift">, two date boxes, and links that open the editor in
  * another window. No Category, no Shift Time, no Duration.
  */
-function makeGridDocument(editUrls) {
+function makeGridDocument(editUrls, cells) {
   const urls = Array.isArray(editUrls) ? editUrls : [editUrls];
+  const grid = gridParts(cells || []);
   const inputs = [
     { name: "sdate", type: "text", value: "01-Oct-2026" },
     { name: "edate", type: "text", value: "31-Oct-2026" },
@@ -137,9 +240,10 @@ function makeGridDocument(editUrls) {
       innerHTML:
         `<a href="index.php?action=view_shift&amp;t=6&amp;y=2026&amp;m=10">Oct</a>` +
         urls.map((url) => `<td onclick="window.open('${url}')">shift</td>`).join("") +
+        grid.html +
         `<a href="index.php?action=log">Log</a>`,
     },
-    querySelectorAll: (selector) => pick(selector, inputs, selects),
+    querySelectorAll: (selector) => pick(selector, inputs, selects, grid.clickables),
   };
 }
 
@@ -212,6 +316,9 @@ function makeBrowser(tabs, storage) {
  *   techIds   - staff the S4 dropdown lists
  *   respond   - (body) => {status, text}; defaults to a bland success page
  *   selects   - false to simulate a page whose dropdowns are missing
+ *   cells     - the grid's calendar rows; false for a page without any
+ *   editors   - false when no row's editor can be opened
+ *   editor    - (params, techIds) => document, to render a row's editor oddly
  */
 function load(options = {}) {
   const {
@@ -221,6 +328,8 @@ function load(options = {}) {
   } = options;
 
   const bus = makeBrowser(options.tabs, options.storage);
+  const cells =
+    options.cells === false ? [] : options.cells || gridCellsFor(techIds);
   const posted = [];
   const fetched = [];
 
@@ -233,11 +342,12 @@ function load(options = {}) {
     // dropped — a gap in the fixture, invisible in the product.
     location: new URL("https://s4.inhouse.net/index.php?action=view_shift&t=6"),
     document: options.grid
-      ? makeGridDocument(options.grid)
+      ? makeGridDocument(options.grid, cells)
       : makeDocument(techIds, {
           selects,
           loose: options.loose,
           noFields: options.noFields,
+          cells,
         }),
     browser: bus.api("content"),
     setTimeout,
@@ -246,7 +356,12 @@ function load(options = {}) {
         // a page read, not a post
         const page = options.pages && options.pages[url];
         fetched.push(url);
-        return { status: page ? 200 : 404, text: async () => page || "<html>Not found</html>" };
+        if (page) return { status: 200, text: async () => page };
+        // A real row's editor, as popup() would have opened it.
+        if (options.editors !== false && /[?&]cal_id=\d+/.test(url) && /chkshift/.test(url)) {
+          return { status: 200, text: async () => `EDITOR ${url}` };
+        }
+        return { status: 404, text: async () => "<html>Not found</html>" };
       }
       const body = Object.fromEntries(new URLSearchParams(init.body));
       posted.push({ url, body });
@@ -256,6 +371,10 @@ function load(options = {}) {
     DOMParser: function DOMParserStub() {
       return {
         parseFromString(html) {
+          if (html.startsWith("EDITOR ")) {
+            const params = new URL(html.slice(7)).searchParams;
+            return (options.editor || makeEditorDocument)(params, techIds);
+          }
           // The pages map hands back a ready-made document rather than html,
           // so parsing is a lookup. Enough to exercise the fetch-and-read path.
           return options.documents && options.documents[html]
@@ -343,4 +462,6 @@ function samplePlan(overrides = {}) {
   );
 }
 
-module.exports = { load, samplePlan, makeDocument, SLOT_LABELS };
+module.exports = {
+  load, samplePlan, makeDocument, makeEditorDocument, gridCellsFor, POPUP_SOURCE, SLOT_LABELS,
+};

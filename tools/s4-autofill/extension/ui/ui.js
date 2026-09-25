@@ -75,7 +75,21 @@ function describeMapping(mapping, plan) {
   const cats = Object.keys(mapping.categoryValues || {}).length;
   const staff = Object.keys(mapping.staffValues || {}).length;
   const fields = Object.keys(mapping.fields || {}).length;
-  return `${fields} fields · ${slots} shift times · ${cats} categories · ${staff} staff`;
+  const parts = [
+    `${fields} fields`, `${slots} shift times`, `${cats} categories`, `${staff} staff`,
+  ];
+  // Each block posts to its own calendar row, so how many found one is the
+  // number that says whether a live run can do its job.
+  if (mapping.gridCells !== undefined) parts.push(`${mapping.gridCells} calendar rows`);
+  if (mapping.coverage) {
+    parts.push(`${mapping.coverage.resolved}/${mapping.coverage.total} blocks matched to a row`);
+  }
+  return parts.join(" · ");
+}
+
+/** Whether the grid's calendar rows were read, which a live run cannot do without. */
+function rowsRead(mapping) {
+  return !!(mapping && mapping.gridCells);
 }
 
 function listProblems(mapping, plan) {
@@ -92,7 +106,17 @@ function listProblems(mapping, plan) {
       lines.push(`dropdown "${name}" has options nothing matched: ${options.join(", ")}`);
     }
   });
-  lines.forEach((text) => {
+  // Worth knowing but not a reason to hold the run: a block with no row is
+  // skipped and listed, the rest still go in.
+  const coverage = mapping.coverage;
+  const notes = [];
+  if (coverage && coverage.missing && rowsRead(mapping)) {
+    notes.push(
+      `${coverage.missing} block(s) have no calendar row in the grid and would be skipped` +
+        (coverage.examples && coverage.examples.length ? ` — e.g. ${coverage.examples[0]}` : "")
+    );
+  }
+  lines.concat(notes).forEach((text) => {
     const li = document.createElement("li");
     li.textContent = text;
     list.appendChild(li);
@@ -107,9 +131,12 @@ function renderResults(run) {
   if (!rows.length) return;
 
   const ok = rows.filter((r) => r.ok).length;
-  const bad = rows.length - ok;
+  const skipped = rows.filter((r) => r.skipped).length;
+  const bad = rows.length - ok - skipped;
   $("counts").textContent =
-    `${ok} ok, ${bad} failed` + (run.dryRun ? " (dry run)" : "");
+    `${ok} ok, ${bad} failed` +
+    (skipped ? `, ${skipped} skipped (no calendar row)` : "") +
+    (run.dryRun ? " (dry run)" : "");
 
   const onlyFailures = $("failuresOnly").checked;
   const shown = onlyFailures ? rows.filter((r) => !r.ok) : rows;
@@ -118,8 +145,8 @@ function renderResults(run) {
   shown.slice(-300).forEach((row) => {
     const tr = document.createElement("tr");
     const state = document.createElement("td");
-    state.className = "state " + (row.ok ? "ok" : "bad");
-    state.textContent = row.ok ? "✓" : "✕";
+    state.className = "state " + (row.ok ? "ok" : row.skipped ? "skip" : "bad");
+    state.textContent = row.ok ? "✓" : row.skipped ? "–" : "✕";
     const what = document.createElement("td");
     const days = row.days > 1 ? ` (${row.days}d)` : "";
     what.textContent = `${row.tech}  ${row.from}→${row.to}${days}  ${row.shift || ""}`;
@@ -232,9 +259,11 @@ function render(state) {
   if (state.settings && $("editUrl").value === "") {
     $("editUrl").value = state.settings.editUrl || "";
   }
-  // Open the fallback on its own once the automatic search has come up short.
-  if (mapping && !mappingClean) $("editorDetails").open = true;
   const mappingClean = listProblems(mapping, plan);
+  // Open the fallback on its own once the automatic search has come up short.
+  // (This used to run a line before mappingClean existed, which threw on every
+  // render once a mapping was found and froze the buttons, status and log.)
+  if (mapping && !mappingClean) $("editorDetails").open = true;
 
   const busy = run.running || state.probing;
   const allowed = !!(state.settings && state.settings.allowWrites);
@@ -244,7 +273,8 @@ function render(state) {
   // A dry run sends nothing, so the only thing that can stop it is not having
   // a plan. Everything else is a reason the *live* button is off.
   $("dryRun").disabled = busy || !plan;
-  $("live").disabled = busy || !plan || !mapping || !mappingClean || !allowed;
+  $("live").disabled =
+    busy || !plan || !mapping || !mappingClean || !rowsRead(mapping) || !allowed;
 
   // Never leave a greyed-out button without saying why.
   const why = [];
@@ -254,7 +284,13 @@ function render(state) {
   if (plan && !busy) {
     if (!mapping) why.push("find the shift form before filling for real");
     else if (!mappingClean) why.push("the mapping is incomplete, so filling for real is off");
-    if (mapping && mappingClean && !allowed) {
+    else if (!rowsRead(mapping)) {
+      why.push(
+        "the grid's calendar rows were not read — open the month in S4 and " +
+          "Find the shift form again"
+      );
+    }
+    if (mapping && mappingClean && rowsRead(mapping) && !allowed) {
       why.push("tick “Allow writing to S4” to enable filling");
     }
   }
@@ -362,8 +398,13 @@ $("live").addEventListener("click", async () => {
   const state = await send("getState");
   const count = state.plan.assignments.length;
   const month = state.plan.month || "this month";
+  const coverage = state.mapping && state.mapping.coverage;
+  const skipping =
+    coverage && coverage.missing
+      ? `\n${coverage.missing} of them have no calendar row in the grid and will be skipped.`
+      : "";
   const confirmed = window.confirm(
-    `Write ${count} shift blocks into S4 for ${month}?\n\n` +
+    `Write ${count} shift blocks into S4 for ${month}?${skipping}\n\n` +
       "This changes the live roster. Run a dry run first if you have not."
   );
   if (!confirmed) return;

@@ -239,8 +239,12 @@ Load [`extension/`](extension/) via `about:debugging`, open S4, load
 itself, refuses to post while anything is unmatched, stops after 3 failures and
 has a Stop button. See [`extension/README.md`](extension/README.md).
 
-The command-line `push` below does the same job from a machine that can reach
-S4, if you would rather script it.
+Each block is posted to its own calendar row: S4's `cal_id` is per person per
+day, and the extension reads it from the month grid and opens that row's editor
+before posting.
+
+The command-line `push` below cannot do that yet — it does not read the grid —
+so `push --execute` refuses to run. Its dry run still lists what the plan holds.
 
 ## Connecting to S4 from the command line
 
@@ -304,8 +308,8 @@ if there are errors.
 ## Tests
 
 ```bash
-python3 -m pytest tests/ -q      # 103 tests, the planner
-cd extension && node --test      # 102 tests, the extension
+python3 -m pytest tests/ -q      # 104 tests, the planner
+cd extension && node --test      # 129 tests, the extension
 ```
 
 ---

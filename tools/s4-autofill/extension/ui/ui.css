@@ -56,6 +56,7 @@ td { border-top: 1px solid var(--line); padding: 3px 4px; vertical-align: top; }
 td.state { width: 14px; font-weight: bold; }
 td.state.ok { color: var(--go); }
 td.state.bad { color: var(--stop); }
+td.state.skip { color: var(--muted); }
 td.detail { color: var(--muted); }
 #results { display: block; max-height: 340px; overflow-y: auto; }
 
