@@ -11,18 +11,28 @@
       <span id="state" class="badge">Idle</span>
     </header>
 
-    <label for="key" class="label">Answer key <span class="hint">(question | answer, one per line — a pasted markdown table works)</span></label>
-    <textarea id="key" spellcheck="false" placeholder="| 1 | Which plan provides assistance with AnyDesk? | Dedicated Engineer Session or PLSM |
-Select correct statements about MySQL recovery | All of the above
-Q: What to do when you get server add tickets?
-A: All of the above"></textarea>
+    <div class="bankbar">
+      <span><b id="bankCount">0</b> questions saved in your question bank</span>
+      <button id="openBank">Open bank</button>
+    </div>
+    <p id="tempWarn" class="note warn" hidden>
+      Loaded temporarily: Firefox deletes the saved questions when it restarts. Export a backup from the question bank, or see
+      the README to keep them.
+    </p>
+
+    <label for="key" class="label">Add or update questions <span class="hint">(paste in any format, saved automatically)</span></label>
+    <textarea id="key" spellcheck="false" placeholder="1. Which plan provides assistance with AnyDesk?
+Answer: Dedicated Engineer Session or PLSM
+
+New questions are added. If a question is already saved, its answer is updated."></textarea>
 
     <div class="row">
-      <button id="save">Save key</button>
+      <button id="save" class="primary">Save to bank</button>
+      <button id="clearBox">Clear box</button>
       <span id="parsed" class="muted"></span>
     </div>
     <details id="previewBox">
-      <summary>Show parsed questions</summary>
+      <summary>Show questions recognised in the box</summary>
       <ol id="preview"></ol>
     </details>
 
@@ -30,19 +40,23 @@ A: All of the above"></textarea>
       <label for="delay">Wait before clicking Next</label>
       <input id="delay" type="number" min="300" max="10000" step="100" /> <span class="muted">ms</span>
     </div>
+    <label class="check"
+      ><input type="checkbox" id="learn" /> Also save answers I pick myself when the autopilot pauses</label
+    >
 
     <div class="row buttons">
       <button id="start" class="primary">Start autopilot</button>
       <button id="stop" class="danger" hidden>Stop</button>
       <button id="once">Answer this page only</button>
     </div>
-    <p id="msg" class="msg" role="status"></p>
+    <p id="msg" class="msg" role="status"><span id="msgText"></span> <button id="undo" class="link" hidden>Undo</button></p>
     <p class="muted small">
-      Open the quiz question page first. The autopilot ticks the matching answer and presses <b>Next question</b>. It pauses on
-      questions it isn't sure about, and it always asks you before pressing <b>End test</b>.
+      Open the quiz question page first. The autopilot answers from your question bank and presses <b>Next question</b>. It
+      pauses on questions it isn't sure about, and it always asks you before pressing <b>End test</b>.
     </p>
 
     <script src="../matcher.js"></script>
+    <script src="../bank.js"></script>
     <script src="popup.js"></script>
   </body>
 </html>

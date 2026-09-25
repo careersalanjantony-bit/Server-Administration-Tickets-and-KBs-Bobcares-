@@ -13,8 +13,9 @@
 
   const api = typeof browser !== 'undefined' ? browser : chrome;
   const M = globalThis.QuizMatcher;
+  const B = globalThis.QuizBank;
 
-  const DEFAULTS = { answerKey: '', running: false, delayMs: 1500, log: [], guard: null };
+  const DEFAULTS = { running: false, delayMs: 1500, log: [], guard: null, learn: false };
   const COLORS = { high: '#16a34a', low: '#d97706', none: '#dc2626' };
 
   let timer = null;
@@ -496,9 +497,9 @@
       return;
     }
 
-    const entries = M.parseKey(st.answerKey);
+    const entries = await B.load(api);
     if (!entries.length) {
-      ui.status('Your answer key is empty. Open the Quiz Autopilot toolbar popup and paste it first.', 'error');
+      ui.status('Your question bank is empty. Open the Quiz Autopilot toolbar popup and paste your questions and answers first.', 'error');
       if (st.running) await save({ running: false });
       return;
     }
@@ -551,6 +552,31 @@
     }
   }
 
+  // The answer on the page, written the way the question bank stores answers.
+  function bankAnswer(q) {
+    if (q.kind === 'drag') return q.drag.slots.map((sl) => sl.pos + '. ' + ((itemInSlot(q, sl.el) || {}).text || '')).join('\n');
+    if (q.kind === 'select') return selectedText(q).split('; ').join('\n');
+    if (q.kind === 'text') return q.fields.map((f) => f.value.trim()).filter(Boolean).join('\n');
+    return q.inputs
+      .map((input, i) => (input.checked ? q.options[i] : null))
+      .filter(Boolean)
+      .join('\n');
+  }
+
+  // "Also save answers I pick myself": questions the autopilot was not sure
+  // about are saved (or updated) with the answer now on the page.
+  async function learn(questions) {
+    const incoming = [];
+    questions.forEach((q, i) => {
+      if (lastResults[i] && lastResults[i].confidence === 'high') return;
+      const a = bankAnswer(q);
+      if (a) incoming.push({ q: q.text, a });
+    });
+    if (!incoming.length) return;
+    const r = B.merge(await B.load(api), incoming, 'learned');
+    if (r.added || r.updated) await B.save(api, r.bank);
+  }
+
   // "Continue" after a pause – use whatever is ticked now (yours or ours).
   async function continueManually() {
     const questions = findQuestions();
@@ -562,6 +588,7 @@
     await recordAnswers(questions, lastResults, lastResults.some((r) => r.confidence !== 'high'));
     ui.setPaused(false);
     const st = await load();
+    if (st.learn) await learn(questions);
     if (!st.running) await save({ running: true, guard: null });
     advance(findNavButtons(), 300);
   }

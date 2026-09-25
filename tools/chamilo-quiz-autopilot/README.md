@@ -25,13 +25,33 @@ Fills in a Chamilo LMS quiz (`…/main/exercise/exercise_submit.php`) from **you
 
 ## Use
 
-1. Click the toolbar icon and paste your answer key into the box. The count under the box shows how many questions were recognised. Use **Show parsed questions** to check them.
-2. Click **Save key**.
-3. Open the quiz, go to the first question, then click **Start autopilot** (in the popup or in the panel at the bottom-right of the page).
-4. When it pauses, check the amber-highlighted answer (change it if needed) and click **Continue**.
-5. At the end, review the summary and click **Yes, End test**, or **Not yet** to stop and review the answers yourself.
+1. Click the toolbar icon and paste your questions and answers into **Add or update questions**. A paste is saved to your **question bank** straight away. The popup shows how many questions are saved.
+2. Open the quiz, go to the first question, then click **Start autopilot** (in the popup or in the panel at the bottom-right of the page).
+3. When it pauses, check the amber-highlighted answer (change it if needed) and click **Continue**.
+4. At the end, review the summary and click **Yes, End test**, or **Not yet** to stop and review the answers yourself.
 
-**Answer this page only** ticks the answer on the current question without clicking anything else. Use it to test your key before a full run.
+**Answer this page only** fills in the answer on the current question without clicking anything else. Use it to test before a full run.
+
+## Question bank
+
+Everything you paste is kept in the add-on's own storage, so you don't paste it again for every quiz.
+
+- **Adding more later:** paste new questions and answers into the popup at any time. New questions are **added**. A question that is already saved gets its answer **updated** if the new answer differs. Everything else is left alone. The popup reports e.g. *"3 added, 1 updated, 30 already saved"* and has an **Undo** link.
+- **Question bank page** (popup → **Open bank**, or `about:addons` → Quiz Autopilot → Preferences) lets you:
+  - search, **edit** or **delete** saved questions
+  - **add** a question by hand
+  - **import** text or a backup file
+  - **export a backup** (`.json`)
+  - **undo the last change**
+- **Also save answers I pick myself** (popup checkbox, off by default): when the autopilot pauses and you choose the answer yourself, that question and your answer are saved too, so next time it is answered automatically. Only switch this on when you're sure of your picks.
+
+### Keeping the saved questions when Firefox restarts
+
+A **temporarily loaded** add-on (about:debugging) is removed when Firefox closes, and Firefox deletes its stored data with it. The popup and the question bank page warn you when that's the case. To keep your questions:
+
+- **Export a backup** before closing Firefox. After loading the add-on again, use **Import…** on the question bank page and choose that file. Nothing is lost, and each question keeps its original date.
+- Or **install the add-on permanently** (see *To keep it installed* above). A permanently installed add-on keeps its data across restarts.
+- Advanced (not tested here): setting `extensions.webextensions.keepStorageOnUninstall` and `extensions.webextensions.keepUuidOnUninstall` to `true` in `about:config` should also keep the data of a temporary add-on. This applies to every add-on you remove.
 
 ## Answer-key formats
 
@@ -109,8 +129,10 @@ Otherwise it pauses. The panel shows which key entry it used and the match score
 |---|---|
 | `manifest.json` | Extension manifest (Manifest V2, which Firefox fully supports). Runs only on `*/main/exercise/*` pages. |
 | `matcher.js` | Answer-key parser and fuzzy matching. Pure functions, shared by the page script, the popup and the tests. |
+| `bank.js` | The question bank: merging new questions and answers, backup export/import, undo. |
+| `bank/` | The question bank page (search, edit, delete, add, import, export). |
 | `content.js` | Reads the quiz page, ticks answers, clicks Next, shows the panel and the End-test confirmation. |
-| `popup/` | Toolbar popup for pasting the key and starting or stopping. |
-| `test/matcher.test.js` | Unit tests: `node --test tools/chamilo-quiz-autopilot/test/matcher.test.js` |
+| `popup/` | Toolbar popup: add questions to the bank, start or stop, settings. |
+| `test/` | Unit tests: `node --test tools/chamilo-quiz-autopilot/test/matcher.test.js tools/chamilo-quiz-autopilot/test/bank.test.js` |
 
-The answer key is stored only in the extension's local storage (`browser.storage.local`) and never leaves your browser.
+The question bank is stored only in the extension's local storage (`browser.storage.local`) and never leaves your browser, except as a backup file you export yourself.

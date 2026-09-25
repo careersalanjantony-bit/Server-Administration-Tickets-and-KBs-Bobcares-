@@ -114,6 +114,7 @@ input[type='number'] {
 }
 
 button {
+  white-space: nowrap;
   font: inherit;
   padding: 6px 12px;
   border-radius: 6px;
@@ -175,4 +176,41 @@ summary {
 
 .msg.warn {
   color: var(--warn);
+}
+
+.bankbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  margin-bottom: 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--field);
+}
+
+.note {
+  margin: 0 0 8px;
+  font-size: 12px;
+}
+
+.note.warn {
+  color: var(--warn);
+}
+
+.check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 4px 0 8px;
+}
+
+button.link {
+  border: 0;
+  background: none;
+  padding: 0 2px;
+  color: var(--primary);
+  text-decoration: underline;
+  cursor: pointer;
 }

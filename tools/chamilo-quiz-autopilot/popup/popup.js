@@ -3,17 +3,23 @@
 
   const api = typeof browser !== 'undefined' ? browser : chrome;
   const M = globalThis.QuizMatcher;
-  const DEFAULTS = { answerKey: '', running: false, delayMs: 1500 };
+  const B = globalThis.QuizBank;
+  const DEFAULTS = { running: false, delayMs: 1500, draft: '', learn: false };
   const $ = (id) => document.getElementById(id);
 
-  function msg(text, level) {
-    $('msg').textContent = text || '';
+  function msg(text, level, canUndo) {
+    $('msgText').textContent = text || '';
     $('msg').className = 'msg ' + (level || '');
+    $('undo').hidden = !canUndo;
   }
 
   function renderPreview() {
-    const entries = M.parseKey($('key').value);
-    $('parsed').textContent = entries.length ? entries.length + ' question(s) recognised' : 'No questions recognised yet';
+    const entries = B.parseAny($('key').value);
+    $('parsed').textContent = $('key').value.trim()
+      ? entries.length
+        ? entries.length + ' question(s) recognised in the box'
+        : 'No questions recognised in the box yet'
+      : '';
     const ol = $('preview');
     ol.textContent = '';
     for (const e of entries) {
@@ -27,6 +33,10 @@
     return entries;
   }
 
+  async function renderBankCount() {
+    $('bankCount').textContent = (await B.load(api)).length;
+  }
+
   function renderState(running) {
     $('state').textContent = running ? 'Running' : 'Idle';
     $('state').className = 'badge' + (running ? ' run' : '');
@@ -34,12 +44,25 @@
     $('stop').hidden = !running;
   }
 
-  async function saveKey() {
-    const entries = renderPreview();
+  async function saveSettings() {
     const delay = Math.min(10000, Math.max(300, parseInt($('delay').value, 10) || DEFAULTS.delayMs));
     $('delay').value = delay;
-    await api.storage.local.set({ answerKey: $('key').value, delayMs: delay });
-    return entries;
+    await api.storage.local.set({ delayMs: delay, learn: $('learn').checked });
+  }
+
+  // Merge whatever is in the box into the bank (a no-op when nothing is new).
+  async function saveBox(quiet) {
+    if (!$('key').value.trim()) return null;
+    const r = await B.addFromText(api, $('key').value, 'pasted');
+    await renderBankCount();
+    if (!r.recognised) {
+      if (!quiet) {
+        msg('No questions recognised in the box. Put each question on its own line with its answer below it (e.g. "Answer: ...").', 'warn');
+      }
+    } else if (!quiet || r.added || r.updated) {
+      msg('Question bank: ' + B.summary(r) + '.', '', !!(r.added || r.updated));
+    }
+    return r;
   }
 
   async function activeTabHasQuiz() {
@@ -55,30 +78,60 @@
 
   async function init() {
     const st = await api.storage.local.get(DEFAULTS);
-    $('key').value = st.answerKey;
+    $('key').value = st.draft;
     $('delay').value = st.delayMs;
+    $('learn').checked = st.learn;
     renderPreview();
     renderState(st.running);
+    await renderBankCount();
 
+    try {
+      const self = await api.management.getSelf();
+      $('tempWarn').hidden = self.installType !== 'development';
+    } catch (e) {
+      /* management API not available - skip the warning */
+    }
+
+    // Keep what's typed even if the popup closes.
     let t;
     $('key').addEventListener('input', () => {
       clearTimeout(t);
-      t = setTimeout(renderPreview, 250);
+      t = setTimeout(() => {
+        renderPreview();
+        api.storage.local.set({ draft: $('key').value });
+      }, 250);
+    });
+    // A paste is saved straight away.
+    $('key').addEventListener('paste', () => {
+      setTimeout(async () => {
+        renderPreview();
+        await api.storage.local.set({ draft: $('key').value });
+        await saveBox(true);
+      }, 0);
     });
 
-    $('save').addEventListener('click', async () => {
-      const entries = await saveKey();
-      msg(
-        entries.length
-          ? 'Saved.'
-          : 'Saved, but no question/answer pairs were recognised. Put each question on its own line with its answer below it (e.g. "Answer: ...").',
-        entries.length ? '' : 'warn'
-      );
+    $('save').addEventListener('click', () => saveBox(false));
+    $('clearBox').addEventListener('click', async () => {
+      $('key').value = '';
+      renderPreview();
+      await api.storage.local.set({ draft: '' });
+      msg('');
     });
+    $('undo').addEventListener('click', async () => {
+      if (await B.undo(api)) msg('Last change undone.');
+      await renderBankCount();
+    });
+    $('openBank').addEventListener('click', () => {
+      api.runtime.openOptionsPage();
+      window.close();
+    });
+    $('delay').addEventListener('change', saveSettings);
+    $('learn').addEventListener('change', saveSettings);
 
     $('start').addEventListener('click', async () => {
-      const entries = await saveKey();
-      if (!entries.length) return msg('Paste your answer key first.', 'warn');
+      await saveSettings();
+      await saveBox(true);
+      if (!(await B.load(api)).length) return msg('Your question bank is empty. Paste your questions and answers first.', 'warn');
       const info = await activeTabHasQuiz();
       if (!info || info.questions < 0) {
         return msg('Open the quiz (…/main/exercise/exercise_submit.php) in this tab first, then press Start.', 'warn');
@@ -95,16 +148,19 @@
     });
 
     $('once').addEventListener('click', async () => {
-      const entries = await saveKey();
-      if (!entries.length) return msg('Paste your answer key first.', 'warn');
+      await saveSettings();
+      await saveBox(true);
+      if (!(await B.load(api)).length) return msg('Your question bank is empty. Paste your questions and answers first.', 'warn');
       const info = await activeTabHasQuiz();
       if (!info || info.questions <= 0) return msg('No quiz question found in this tab.', 'warn');
       await api.tabs.sendMessage(info.tab.id, { type: 'answer-once' });
-      msg('Answer ticked on the page. Check the panel at the bottom-right.');
+      msg('Answer filled in on the page. Check the panel at the bottom-right.');
     });
 
     api.storage.onChanged.addListener((changes, area) => {
-      if (area === 'local' && changes.running) renderState(!!changes.running.newValue);
+      if (area !== 'local') return;
+      if (changes.running) renderState(!!changes.running.newValue);
+      if (changes.bank) renderBankCount();
     });
   }
 
