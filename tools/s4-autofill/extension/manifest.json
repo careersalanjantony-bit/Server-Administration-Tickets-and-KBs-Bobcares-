@@ -1,0 +1,42 @@
+{
+  "manifest_version": 2,
+  "name": "S4 Shift Autofill",
+  "version": "2.9",
+  "description": "Applies a planned monthly roster to S4 \u2014 the shifts people asked for, filled in for them.",
+  "permissions": [
+    "storage",
+    "tabs",
+    "activeTab",
+    "*://s4.inhouse.net/*"
+  ],
+  "background": {
+    "scripts": [
+      "content/mapping.js",
+      "background.js"
+    ]
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "*://s4.inhouse.net/index.php*"
+      ],
+      "js": [
+        "content/mapping.js",
+        "content/s4page.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "browser_action": {
+    "default_icon": "icons/main.png",
+    "default_title": "S4 Shift Autofill"
+  },
+  "icons": {
+    "48": "icons/main.png"
+  },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "s4-shift-autofill@bobcares.internal"
+    }
+  }
+}

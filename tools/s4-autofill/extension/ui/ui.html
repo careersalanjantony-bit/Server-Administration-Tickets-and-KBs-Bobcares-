@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="ui.css">
+  <title>S4 Shift Autofill</title>
+</head>
+<body>
+  <header>
+    <h1>S4 Shift Autofill</h1>
+    <span id="build" class="muted tiny"></span>
+    <span id="month" class="muted"></span>
+  </header>
+
+  <section>
+    <h2><span class="step">1</span> Plan</h2>
+    <div id="drop" class="drop">
+      <input type="file" id="planFile" accept=".json,application/json">
+      <span class="muted">or drag <code>plan.json</code> here</span>
+    </div>
+    <p id="planInfo" class="muted">No plan loaded.</p>
+    <details>
+      <summary class="muted tiny">paste it instead</summary>
+      <textarea id="planPaste" rows="4" placeholder="paste the contents of plan.json"></textarea>
+      <button id="planPasteLoad" type="button">Load pasted plan</button>
+    </details>
+  </section>
+
+  <section>
+    <h2><span class="step">2</span> S4 form</h2>
+    <button id="probe" type="button">Find the shift form</button>
+    <p class="muted tiny">Checks every open S4 tab — you do not have to be on the right one.</p>
+    <p id="mapInfo" class="muted">Not read yet.</p>
+    <p id="mapWhere" class="muted tiny"></p>
+    <ul id="mapProblems" class="problems"></ul>
+    <details id="editorDetails">
+      <summary class="muted tiny">the editor is on another page</summary>
+      <p class="muted tiny">
+        S4 opens the shift editor in its own window, so the grid you are looking at
+        does not have the fields. It follows the grid's own links automatically —
+        if that misses, open the editor and paste its address here.
+      </p>
+      <input type="text" id="editUrl" placeholder="https://s4.inhouse.net/index.php?action=view_shift&amp;…&amp;edit_co_shift=N">
+      <button id="editUrlSave" type="button">Save and find again</button>
+    </details>
+  </section>
+
+  <section>
+    <h2><span class="step">3</span> Fill</h2>
+    <div class="row">
+      <button id="dryRun" type="button">Dry run</button>
+      <button id="live" type="button" class="danger" disabled>Fill S4 for real</button>
+      <button id="stop" type="button" hidden>Stop</button>
+    </div>
+    <p id="fillReason" class="muted"></p>
+    <label class="row small lock">
+      <input type="checkbox" id="allowWrites">
+      <span>Allow writing to S4 <span class="muted">— off, so a dry run cannot change anything</span></span>
+    </label>
+    <details id="testDetails" class="test">
+      <summary>Test one row on the live roster first</summary>
+      <p class="muted tiny">
+        Moves one working day to the next shift along and reads S4 back to check
+        it saved. Then it asks whether to put the day back — say no and the
+        change stays. Leave the boxes empty to let it pick a day.
+      </p>
+      <div class="row">
+        <input type="text" id="testTech" placeholder="tech, e.g. alan.j (optional)">
+        <input type="text" id="testDate" placeholder="YYYY-MM-DD (optional)">
+        <button id="testOne" type="button">Test one row</button>
+      </div>
+      <p id="testResult" class="muted"></p>
+      <div class="row" id="testAnswer" hidden>
+        <button id="testRestore" type="button">Put it back</button>
+        <button id="testKeep" type="button">Keep it</button>
+      </div>
+    </details>
+    <label class="row small">
+      Pause between posts
+      <input type="number" id="delay" min="0" max="10000" step="100" value="700"> ms
+    </label>
+    <div id="status" class="status">
+      <div class="row">
+        <strong id="statusState">Idle</strong>
+        <span id="statusDetail" class="muted"></span>
+        <button id="unstick" type="button" class="link" hidden>clear run state</button>
+      </div>
+      <div class="bar"><div id="bar"></div></div>
+      <p id="statusCurrent" class="muted tiny"></p>
+    </div>
+    <p id="runNote" class="note" hidden></p>
+  </section>
+
+  <section id="resultsSection" hidden>
+    <h2>Results</h2>
+    <div class="row">
+      <span id="counts" class="muted"></span>
+      <button id="copy" type="button" class="link">Copy log</button>
+      <button id="reset" type="button" class="link">Clear</button>
+    </div>
+    <label class="row small">
+      <input type="checkbox" id="failuresOnly"> failures only
+    </label>
+    <table id="results"><tbody></tbody></table>
+  </section>
+
+  <section id="logSection">
+    <h2>Activity log</h2>
+    <div class="row">
+      <span id="logCount" class="muted"></span>
+      <label class="small"><input type="checkbox" id="logProblems"> problems only</label>
+      <button id="logCopy" type="button" class="link">Copy log</button>
+      <button id="logDownload" type="button" class="link">Download</button>
+      <button id="logClear" type="button" class="link">Clear</button>
+    </div>
+    <pre id="log" class="log"></pre>
+    <div class="row">
+      <button id="diagCopy" type="button">Copy diagnostics</button>
+      <button id="diagDownload" type="button" class="link">Download diagnostics</button>
+      <span class="muted tiny">everything needed to work out what went wrong</span>
+    </div>
+  </section>
+
+  <p id="error" class="error" hidden></p>
+  <script src="../content/mapping.js"></script>
+  <script src="ui.js"></script>
+</body>
+</html>
