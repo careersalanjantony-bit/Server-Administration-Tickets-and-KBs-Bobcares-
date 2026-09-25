@@ -121,11 +121,50 @@
     };
   }
 
+  // ---- drag-and-drop ordering questions (Chamilo "sequence ordering")
+
+  function itemText(li) {
+    const opt = li.querySelector('.exercise-draggable-answer-option');
+    if (opt) return textOf(opt);
+    const clone = li.cloneNode(true);
+    clone.querySelectorAll('select, .hidden, [hidden]').forEach((x) => x.remove());
+    return textOf(clone);
+  }
+
+  // The draggable items and the numbered slots they get dropped on, or null.
+  // Chamilo's class names first; jQuery UI's own ui-draggable / ui-droppable
+  // markers as a fallback for other themes and versions.
+  function dragParts(container) {
+    if (!container) return null;
+    let items = [...new Set(container.querySelectorAll('li.touch-items, .exercise-draggable-answer > li, .ui-draggable'))];
+    items = items.filter((it) => !it.classList.contains('ui-draggable-dragging') && !items.some((o) => o !== it && o.contains(it)));
+    const drops = [...new Set(container.querySelectorAll('.droppable, [id^="drop_"], .ui-droppable'))];
+    const gallery =
+      container.querySelector('.exercise-draggable-answer') ||
+      drops.find((z) => z.matches('ul, ol') && items.filter((it) => z.contains(it)).length >= 2) ||
+      null;
+    const zones = drops.filter((z) => z !== gallery && !(gallery && z.contains(gallery)) && !items.some((it) => it === z || it.contains(z)));
+    if (!items.length || !zones.length) return null;
+    const slots = zones
+      .map((z, i) => {
+        const m = (z.id || '').match(/_(\d+)$/);
+        const num = z.parentElement && z.parentElement.querySelector('.number');
+        const pos = m ? +m[1] : parseInt(num ? textOf(num) : '', 10) || i + 1;
+        return { el: z, pos };
+      })
+      .sort((a, b) => a.pos - b.pos);
+    return { gallery, items: items.map((el) => ({ el, text: itemText(el) })), slots };
+  }
+
   function findQuestions() {
     const controls = answerControls();
-    if (!controls.length) return [];
     const titles = [...document.querySelectorAll('.question_title')].filter(visible);
     const groups = new Map();
+    // Drag-and-drop questions may have no named controls at all.
+    for (const t of titles) {
+      if (dragParts(t.closest('.main-question, [id^="question_div_"]'))) groups.set(t, []);
+    }
+    if (!controls.length && !groups.size) return [];
 
     for (const ctrl of controls) {
       let title = null;
@@ -141,7 +180,7 @@
     const questions = [];
     for (const [titleEl, ctrls] of groups) {
       let container = titleEl.closest('.main-question, [id^="question_div_"]');
-      if (!container) {
+      if (!container && ctrls.length) {
         container = titleEl.parentElement;
         while (container && container !== document.body && !container.contains(ctrls[0])) container = container.parentElement;
       }
@@ -152,7 +191,12 @@
       const selects = ctrls.filter((el) => el.tagName === 'SELECT');
       const fields = ctrls.filter((el) => el.tagName === 'TEXTAREA' || (el.tagName === 'INPUT' && el.type === 'text'));
 
-      if (selects.length) {
+      const drag = dragParts(container);
+      if (drag) {
+        // Solved like a matching question: each item -> a slot number.
+        const positions = drag.slots.map((sl) => String(sl.pos));
+        questions.push(Object.assign(base, { kind: 'drag', drag, rows: drag.items.map((it) => ({ label: it.text, options: positions })) }));
+      } else if (selects.length) {
         const letters = letterMap(container);
         questions.push(Object.assign(base, { kind: 'select', selects, rows: selects.map((s) => selectRow(s, letters)) }));
       } else if (boxes.length) {
@@ -227,8 +271,97 @@
     el.style.borderRadius = '4px';
   }
 
-  function applyResult(q, r) {
+  const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
+
+  // Page coordinates of an element's centre.
+  function pageCenter(el) {
+    const r = el.getBoundingClientRect();
+    return { x: r.left + r.width / 2 + window.scrollX, y: r.top + r.height / 2 + window.scrollY };
+  }
+
+  function mouse(type, target, p) {
+    const x = p.x - window.scrollX;
+    const y = p.y - window.scrollY;
+    target.dispatchEvent(
+      new MouseEvent(type, {
+        bubbles: true,
+        cancelable: true,
+        view: window,
+        clientX: x,
+        clientY: y,
+        screenX: x,
+        screenY: y,
+        button: 0,
+        buttons: type === 'mouseup' ? 0 : 1,
+      })
+    );
+  }
+
+  // Drag the way a person does: press on the item, move in small steps, release
+  // over the target. Chamilo's own drop handler then records the answer.
+  async function dragTo(itemEl, targetEl) {
+    const handle = itemEl.querySelector('.exercise-draggable-answer-option') || itemEl;
+    handle.scrollIntoView({ block: 'center' });
+    await sleep(80);
+    const a = pageCenter(handle);
+    const b = pageCenter(targetEl);
+    mouse('mousedown', handle, a);
+    const steps = 10;
+    for (let i = 1; i <= steps; i++) {
+      mouse('mousemove', document, { x: a.x + ((b.x - a.x) * i) / steps, y: a.y + ((b.y - a.y) * i) / steps });
+      await sleep(16);
+    }
+    mouse('mouseup', document, b);
+    await sleep(750); // Chamilo fades the item out and back in
+  }
+
+  // Put an item back in the list (it sits in the wrong slot).
+  async function recycle(itemEl, gallery) {
+    if (gallery && gallery.getBoundingClientRect().height > 8) return dragTo(itemEl, gallery);
+    try {
+      const page = window.wrappedJSObject || window;
+      if (page.DraggableAnswer && page.jQuery) {
+        page.DraggableAnswer.recycleItem(page.jQuery(page.document.getElementById(itemEl.id)));
+        await sleep(750);
+      }
+    } catch (e) {
+      /* could not reach the page's helper - verification below will catch it */
+    }
+    return undefined;
+  }
+
+  // Returns true when every item ended up in the slot we wanted.
+  async function applyDrag(q, r) {
+    const { slots, gallery, items } = q.drag;
+    const want = new Map();
+    items.forEach((it, i) => {
+      const p = r.rowPicks[i];
+      if (p != null && p >= 0) want.set(it.el, slots[p].el);
+    });
+    if (!want.size) return false;
+    for (const it of items) {
+      const inSlot = slots.find((sl) => sl.el.contains(it.el));
+      if (inSlot && want.get(it.el) !== inSlot.el) await recycle(it.el, gallery);
+    }
+    for (const [el, slotEl] of want) {
+      if (!slotEl.contains(el)) await dragTo(el, slotEl);
+    }
+    await sleep(200);
+    return [...want].every(([el, slotEl]) => slotEl.contains(el));
+  }
+
+  async function applyResult(q, r) {
     const color = COLORS[r.confidence];
+    if (q.kind === 'drag') {
+      if (!r.rowPicks.length) return;
+      const ok = await applyDrag(q, r);
+      if (!ok) {
+        r.confidence = 'low';
+        r.reason = (r.reason ? r.reason + ' ' : '') + 'Could not finish dragging automatically - drag the items into the order shown, then press Continue.';
+      }
+      for (const sl of q.drag.slots) highlight(sl.el.closest('.droppable-item') || sl.el, COLORS[r.confidence]);
+      return;
+    }
     if (q.kind === 'select') {
       q.rows.forEach((row, i) => {
         const pick = r.rowPicks[i];
@@ -266,7 +399,10 @@
     return o && o.value !== '' && !PLACEHOLDER.test(textOf(o)) ? o : null;
   };
 
+  const itemInSlot = (q, slotEl) => q.drag.items.find((it) => slotEl.contains(it.el));
+
   function isAnswered(q) {
+    if (q.kind === 'drag') return q.drag.slots.every((sl) => itemInSlot(q, sl.el));
     if (q.kind === 'select') return q.selects.every(selectedOption);
     if (q.kind === 'text') return q.fields.some((f) => f.value.trim());
     return q.inputs.some((i) => i.checked);
@@ -274,6 +410,9 @@
 
   // What is on the page right now (ours or the user's own choice).
   function selectedText(q) {
+    if (q.kind === 'drag') {
+      return q.drag.slots.map((sl) => sl.pos + '. ' + ((itemInSlot(q, sl.el) || {}).text || '?')).join('; ');
+    }
     if (q.kind === 'select') {
       return q.rows
         .map((row, i) => {
@@ -292,6 +431,15 @@
 
   // What the autopilot chose, for the panel.
   function plannedText(q, r) {
+    if (q.kind === 'drag') {
+      if (!r.rowPicks.length) return '(nothing placed)';
+      return q.drag.slots
+        .map((sl, j) => {
+          const i = r.rowPicks.indexOf(j);
+          return sl.pos + '. ' + (i >= 0 ? q.drag.items[i].text : '?');
+        })
+        .join('; ');
+    }
     if (q.kind === 'select') {
       return r.rowPicks.length ? q.rows.map((row, i) => row.label + ' → ' + (r.rowPicks[i] >= 0 ? row.options[r.rowPicks[i]] : '?')).join('; ') : '(nothing selected)';
     }
@@ -368,16 +516,17 @@
     }
 
     clearHighlights();
-    lastResults = questions.map((q) => {
+    lastResults = [];
+    for (const q of questions) {
       const r = M.solve(q, entries);
-      applyResult(q, r);
-      return r;
-    });
+      await applyResult(q, r);
+      lastResults.push(r);
+    }
     await recordAnswers(questions, lastResults, false);
     ui.showResults(questions, lastResults);
 
     if (!auto) {
-      ui.status(mode === 'once' ? 'Answer ticked. Nothing else was clicked.' : '', 'info');
+      ui.status(mode === 'once' ? 'Answer filled in. Nothing else was clicked.' : '', 'info');
       return;
     }
 

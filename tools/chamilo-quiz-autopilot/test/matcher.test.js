@@ -196,6 +196,18 @@ test('matching / ordering drop-downs follow the numbered answer list', () => {
   assert.deepEqual(r.rowPicks, [2, 0, 1]);
 });
 
+test('drag-and-drop ordering: each item gets its slot from the numbered answer list', () => {
+  const key = M.parseKey(
+    '### 14. Match following tasks in order of priority\n\n**Answer:**\n\n1. Priority Chats\n2. Priority Tickets\n3. Standard queue Downtime issues\n' +
+      '4. Scheduled tasks - try to complete the tasks before off-peak hours get over\n5. Standard queue simple tickets'
+  );
+  const items = ['Standard queue simple tickets', 'Standard queue Downtime issues', 'Scheduled tasks - try to complete the tasks before off-peak hours get over', 'Priority chats', 'Priority tickets'];
+  const slots = ['1', '2', '3', '4', '5'];
+  const r = M.solve({ kind: 'drag', text: '17. Match following tasks in order of priority', rows: items.map((label) => ({ label, options: slots })) }, key);
+  assert.deepEqual(r.rowPicks.map((i) => slots[i]), ['5', '3', '4', '1', '2']);
+  assert.equal(r.confidence, 'high');
+});
+
 test('typed-answer questions are filled but always marked for checking', () => {
   const key = M.parseKey('1. Why does MySQL fail after deleting ib_logfile0 without a clean shutdown?\nAnswer: LSN mismatch due to missing redo logs');
   const r = M.solve({ kind: 'text', text: 'Why does MySQL fail to start after deleting ib_logfile0 without a clean shutdown?', fieldCount: 1 }, key);

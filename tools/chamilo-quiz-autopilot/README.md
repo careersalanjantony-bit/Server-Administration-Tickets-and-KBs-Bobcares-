@@ -3,7 +3,7 @@
 Fills in a Chamilo LMS quiz (`…/main/exercise/exercise_submit.php`) from **your own answer key**:
 
 1. Reads the question on the page and finds the matching entry in your key. Questions and answer options can be in any (shuffled) order, and the wording can differ a bit.
-2. Answers it (radio buttons, checkboxes, matching drop-downs, or typed answers) and highlights what it chose (green = sure, amber = check this).
+2. Answers it (radio buttons, checkboxes, drag-and-drop ordering, matching drop-downs, or typed answers) and highlights what it chose (green = sure, amber = check this).
 3. Clicks **Next question** after a short delay.
 4. **Pauses** on any question it isn't sure about, so you can check or pick the answer and then press **Continue**.
 5. On the last question it **never** clicks **End test** on its own. It shows a summary of every answer and waits for you to confirm.
@@ -81,7 +81,7 @@ Tips:
   - **`A OR B`** means either is fine. If both appear as options, the autopilot pauses so you can choose.
   - An answer with **several statements** (bullets, `A + B`, `A; B`) picks the *All of the above* option. It pauses if the page has a statement your key doesn't mention.
 - Answers such as *All of the above*, *All listed steps* or *All of the statements are correct* all match the page's "All …" option.
-- A **numbered list** in the answer (for example the priority order) is used for matching / ordering questions with drop-downs. "1", "1st", "First" and "Priority 1" all count as position 1.
+- A **numbered list** in the answer (for example the priority order) is used for drag-and-drop ordering and for matching / ordering questions with drop-downs. "1", "1st", "First" and "Priority 1" all count as position 1.
 
 ## Question types
 
@@ -89,6 +89,7 @@ Tips:
 |---|---|
 | Single answer (radio buttons) | Ticks the matching option. |
 | Multiple answers (checkboxes) | Ticks every option your key lists and unticks the rest. |
+| Drag-and-drop ordering (items dragged into numbered slots) | Drags each item into its slot, like a real mouse drag, so Chamilo records it. Items already in the right slot are left alone, and wrong ones are moved out first. It then checks the result and pauses if an item didn't land. |
 | Matching / ordering (drop-downs) | Picks each drop-down from the pairs or numbered list in your key. It also handles Chamilo's lettered "A. …" lists. |
 | Typed answer (text box / fill in the blanks) | Types the answer from your key, then **always pauses** so you can check it before continuing. |
 

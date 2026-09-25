@@ -217,9 +217,9 @@
   /**
    * Decide how to answer one question.
    *
-   * @param {object} q  { kind: 'choice'|'select'|'text', text, extraText?,
+   * @param {object} q  { kind: 'choice'|'select'|'drag'|'text', text, extraText?,
    *                      options: string[], multi: boolean,      (choice)
-   *                      rows: [{label, options: string[]}],     (select: matching / ordering drop-downs)
+   *                      rows: [{label, options: string[]}],     (select / drag: matching, ordering)
    *                      fieldCount: number }                    (text: typed answers)
    * @param {Array} entries  parsed answer key [{ q, a, qx? }]
    * @returns {{ picks:number[], rowPicks:number[], fills:string[], confidence:'high'|'low'|'none',
@@ -227,7 +227,7 @@
    */
   function solve(q, entries) {
     if (!entries || !entries.length) return noMatch('The answer key is empty.');
-    if (q.kind === 'select') return solveSelect(q, entries);
+    if (q.kind === 'select' || q.kind === 'drag') return solveSelect(q, entries);
     if (q.kind === 'text') return solveText(q, entries);
 
     const options = q.options || [];
