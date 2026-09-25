@@ -714,3 +714,147 @@ test("the row in flight is reported while a run goes", async () => {
   const after = await harness.send("getState");
   assert.strictEqual(after.run.current, null, "cleared when it finishes");
 });
+
+// ------------------------------------------------------------ the activity log
+// Every round of this has been somebody describing a failure from a screenshot.
+// The log exists so the next one can be read instead.
+
+function messages(state) {
+  return (state.log || []).map((e) => e.message);
+}
+
+test("loading a plan is logged with its shape", async () => {
+  const harness = load({ techIds: TECHS });
+  const state = await harness.send("setPlan", { plan: samplePlan() });
+  const entry = state.log.find((e) => e.message === "Plan loaded");
+  assert.ok(entry, messages(state).join(" | "));
+  assert.strictEqual(entry.detail.blocks, 2);
+  assert.strictEqual(entry.detail.month, "2026-10");
+});
+
+test("the probe records every page it looked at", async () => {
+  const harness = gridHarness();
+  await harness.send("setPlan", { plan: samplePlan() });
+  const state = await harness.send("probe");
+  assert.ok(messages(state).includes("Looking for the shift form"));
+  assert.ok(messages(state).includes("Read an open S4 tab"));
+  assert.ok(messages(state).includes("Fetched a linked S4 page"));
+  const built = state.log.find((e) => e.message === "Mapping built");
+  assert.strictEqual(built.detail.shiftTimes, 15);
+  assert.strictEqual(built.level, "ok");
+});
+
+test("an incomplete mapping is logged as a problem, with what is missing", async () => {
+  const harness = load({
+    techIds: TECHS,
+    grid: "https://s4.inhouse.net/index.php?action=nothing",
+  });
+  await harness.send("setPlan", { plan: samplePlan() });
+  const state = await harness.send("probe");
+  const built = state.log.find((e) => e.message === "Mapping built");
+  assert.strictEqual(built.level, "warn");
+  assert.ok(built.detail.missingFields.length);
+});
+
+test("every refusal explains itself in the log", async () => {
+  const harness = load({ techIds: TECHS });
+  await harness.send("setPlan", { plan: samplePlan() });
+  await harness.send("startRun", { dryRun: false });
+  const state = await harness.send("getState");
+  assert.ok(
+    messages(state).some((m) => /Refused to run/.test(m)),
+    messages(state).join(" | ")
+  );
+});
+
+test("unlocking writing is recorded", async () => {
+  const harness = load({ techIds: TECHS });
+  await harness.send("setSettings", { settings: { allowWrites: true } });
+  const state = await harness.send("getState");
+  assert.ok(messages(state).includes("Writing to S4 was unlocked"));
+});
+
+test("a failed post is logged with what S4 said", async () => {
+  const { harness } = await ready({
+    respond: () => ({ status: 200, text: "<html>Error: not allowed</html>" }),
+  });
+  await harness.send("startRun", { dryRun: false });
+  const state = await harness.send("getState");
+  const refusal = state.log.find((e) => e.level === "error" && /Refused:/.test(e.message));
+  assert.ok(refusal, messages(state).join(" | "));
+  assert.match(refusal.detail.detail, /not allowed/i);
+});
+
+test("a long run does not bury the failures in the log", async () => {
+  const plan = samplePlan({
+    assignments: Array.from({ length: 120 }, (_, i) => ({
+      tech_id: "mojin.t", category: "W", slot_id: "s0",
+      shift_time: "06:58am-02:58pm", start_date: "01-Oct-2026",
+      end_date: "01-Oct-2026", days: 1, time: "06:58", duration_min: 480,
+      reason: "x", source: "minimum", seq: i,
+    })),
+  });
+  const { harness } = await ready({ plan });
+  await harness.send("startRun", { dryRun: false });
+  const state = await harness.send("getState");
+  const posted = (state.log || []).filter((e) => /^Posted /.test(e.message));
+  assert.ok(posted.length < 20, `should summarise, got ${posted.length} lines`);
+  assert.ok(posted.length >= 3, "should still show the run's shape");
+});
+
+test("the log is capped so it cannot grow without bound", async () => {
+  const plan = samplePlan({
+    assignments: Array.from({ length: 300 }, () => ({
+      tech_id: "mojin.t", category: "W", slot_id: "s0",
+      shift_time: "06:58am-02:58pm", start_date: "01-Oct-2026",
+      end_date: "01-Oct-2026", days: 1, time: "06:58", duration_min: 480,
+      reason: "x", source: "minimum",
+    })),
+  });
+  const { harness } = await ready({
+    plan,
+    respond: () => ({ status: 500, text: "boom" }),
+  });
+  await harness.send("setSettings", { settings: { delayMs: 0, stopAfterFailures: 99999 } });
+  await harness.send("startRun", { dryRun: false });
+  const state = await harness.send("getState");
+  assert.ok(state.log.length <= 1200, `log grew to ${state.log.length}`);
+});
+
+// ------------------------------------------------------------- diagnostics
+
+test("diagnostics carry the form's real field names", async () => {
+  const harness = gridHarness();
+  await harness.send("setPlan", { plan: samplePlan() });
+  await harness.send("probe");
+  const diag = await harness.send("diagnostics");
+  assert.ok(diag.mapping, "should include the mapping");
+  const names = diag.mapping.forms.flatMap((f) => f.inputs);
+  assert.ok(names.some((n) => n.startsWith("sdate")), JSON.stringify(names));
+  assert.ok(diag.mapping.forms.some((f) => f.selects.length), "and the dropdowns");
+});
+
+test("diagnostics say what is missing and where it looked", async () => {
+  const harness = load({
+    techIds: TECHS,
+    grid: "https://s4.inhouse.net/index.php?action=nothing",
+  });
+  await harness.send("setPlan", { plan: samplePlan() });
+  await harness.send("probe");
+  const diag = await harness.send("diagnostics");
+  assert.ok(diag.missing.fields.length);
+  assert.ok(diag.mapping.looked.length);
+  assert.ok(diag.log.length);
+  assert.ok(diag.version, "and the build, so a stale install is obvious");
+});
+
+test("diagnostics stay small enough to paste", async () => {
+  const harness = gridHarness();
+  await harness.send("setPlan", { plan: samplePlan() });
+  await harness.send("probe");
+  await harness.send("startRun", { dryRun: true });
+  const diag = await harness.send("diagnostics");
+  const size = JSON.stringify(diag).length;
+  assert.ok(size < 200000, `diagnostics are ${size} bytes`);
+  assert.strictEqual(diag.plan.sample.length, 2, "a sample of the plan, not all of it");
+});

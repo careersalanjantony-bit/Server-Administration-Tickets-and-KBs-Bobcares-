@@ -162,6 +162,63 @@ function renderStatus(run, busy) {
   box.classList.toggle("going", busy);
 }
 
+function renderLog(state) {
+  const entries = state.log || [];
+  const problemsOnly = $("logProblems").checked;
+  const shown = problemsOnly
+    ? entries.filter((e) => e.level === "warn" || e.level === "error")
+    : entries;
+
+  $("logCount").textContent = `${entries.length} entries` +
+    (problemsOnly ? ` · showing ${shown.length}` : "");
+
+  const box = $("log");
+  const atBottom = box.scrollTop + box.clientHeight >= box.scrollHeight - 24;
+  box.textContent = "";
+  shown.slice(-400).forEach((entry) => {
+    const line = document.createElement("div");
+    const time = document.createElement("span");
+    time.className = "t";
+    time.textContent = new Date(entry.t).toLocaleTimeString() + "  ";
+    const level = document.createElement("b");
+    level.className = entry.level;
+    level.textContent = entry.level.toUpperCase().padEnd(5) + " ";
+    const text = document.createElement("span");
+    text.textContent = entry.message +
+      (entry.detail ? "  " + JSON.stringify(entry.detail) : "");
+    line.append(time, level, text);
+    box.appendChild(line);
+  });
+  if (atBottom) box.scrollTop = box.scrollHeight;
+}
+
+function logAsText(entries) {
+  return (entries || [])
+    .map(
+      (e) =>
+        `${e.t}  ${e.level.toUpperCase().padEnd(5)} ${e.message}` +
+        (e.detail ? "  " + JSON.stringify(e.detail) : "")
+    )
+    .join("\n");
+}
+
+function download(name, text) {
+  const url = URL.createObjectURL(new Blob([text], { type: "text/plain" }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = name;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
+
+async function flash(button, word) {
+  const was = button.textContent;
+  button.textContent = word;
+  setTimeout(() => (button.textContent = was), 1200);
+}
+
 function render(state) {
   if (!state) return;
   const { plan, mapping, run } = state;
@@ -212,6 +269,7 @@ function render(state) {
   $("runNote").textContent = notes.join("  ");
 
   renderResults(run);
+  renderLog(state);
 
   if (busy && !timer) timer = setInterval(refresh, REFRESH_MS);
   if (!busy && timer) {
@@ -327,6 +385,38 @@ $("reset").addEventListener("click", async () => {
 });
 
 $("failuresOnly").addEventListener("change", refresh);
+$("logProblems").addEventListener("change", refresh);
+
+$("logCopy").addEventListener("click", async () => {
+  const state = await send("getState");
+  await navigator.clipboard.writeText(logAsText(state.log));
+  flash($("logCopy"), "copied");
+});
+
+$("logDownload").addEventListener("click", async () => {
+  const state = await send("getState");
+  const month = (state.plan && state.plan.month) || "s4";
+  download(`s4-autofill-${month}-log.txt`, logAsText(state.log));
+});
+
+$("logClear").addEventListener("click", async () => {
+  const state = await call("clearLog");
+  if (state) render(state);
+});
+
+$("diagCopy").addEventListener("click", async () => {
+  const diag = await call("diagnostics");
+  if (!diag) return;
+  await navigator.clipboard.writeText(JSON.stringify(diag, null, 2));
+  flash($("diagCopy"), "copied — paste it wherever you need");
+});
+
+$("diagDownload").addEventListener("click", async () => {
+  const diag = await call("diagnostics");
+  if (!diag) return;
+  const month = (diag.plan && diag.plan.month) || "s4";
+  download(`s4-autofill-${month}-diagnostics.json`, JSON.stringify(diag, null, 2));
+});
 
 $("copy").addEventListener("click", async () => {
   const state = await send("getState");

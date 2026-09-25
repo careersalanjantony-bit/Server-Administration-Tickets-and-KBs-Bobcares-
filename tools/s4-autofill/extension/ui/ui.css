@@ -96,3 +96,22 @@ input[type="text"] {
 .status .bar { margin-top: 6px; }
 .status.going strong { color: var(--go); }
 .status.jammed strong { color: var(--stop); }
+
+.log {
+  font: 11px/1.5 ui-monospace, Menlo, Consolas, monospace;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  padding: 6px 8px;
+  margin: 8px 0;
+  max-height: 260px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.log b { font-weight: 700; }
+.log .t { color: var(--muted); }
+.log .ok { color: var(--go); }
+.log .warn { color: #9A6B00; }
+.log .error { color: var(--stop); }
+.log .info { color: var(--ink); }

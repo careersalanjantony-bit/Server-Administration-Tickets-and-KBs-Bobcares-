@@ -86,6 +86,23 @@
     <table id="results"><tbody></tbody></table>
   </section>
 
+  <section id="logSection">
+    <h2>Activity log</h2>
+    <div class="row">
+      <span id="logCount" class="muted"></span>
+      <label class="small"><input type="checkbox" id="logProblems"> problems only</label>
+      <button id="logCopy" type="button" class="link">Copy log</button>
+      <button id="logDownload" type="button" class="link">Download</button>
+      <button id="logClear" type="button" class="link">Clear</button>
+    </div>
+    <pre id="log" class="log"></pre>
+    <div class="row">
+      <button id="diagCopy" type="button">Copy diagnostics</button>
+      <button id="diagDownload" type="button" class="link">Download diagnostics</button>
+      <span class="muted tiny">everything needed to work out what went wrong</span>
+    </div>
+  </section>
+
   <p id="error" class="error" hidden></p>
   <script src="../content/mapping.js"></script>
   <script src="ui.js"></script>

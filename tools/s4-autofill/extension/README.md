@@ -83,6 +83,28 @@ a complete mapping:
 It reports which page it settled on, and lists anything it could not match
 rather than guessing.
 
+### The activity log
+
+Everything the extension does is recorded, and shown at the bottom of the page:
+which pages it read and what each scored, what the mapping came back with and
+what it could not match, every refusal and why, and what S4 said to each post.
+**Problems only** filters to warnings and errors. **Copy log** and **Download**
+take it away as text.
+
+A long run is summarised rather than transcribed — the first few posts, then
+every fiftieth, then the last — so failures are never buried. Every row is in
+the results table regardless. The log is capped at 1200 entries.
+
+### Copy diagnostics
+
+One button, and the clipboard holds everything needed to work out why something
+did not fit: the build version, the plan's shape, the mapping, **the real field
+names and dropdown options of every form it saw**, what is still unmatched,
+every page it looked at, the settings, the last failures and the whole log. It
+stays small enough to paste.
+
+Reach for this instead of describing a problem.
+
 ### Watching a run
 
 The status line under the buttons says what is happening: **Idle**, **Dry run
@@ -160,7 +182,7 @@ It writes to a live roster, so:
 node --test
 ```
 
-59 tests. They load the real `background.js` and `content/s4page.js` into a VM
+70 tests. They load the real `background.js` and `content/s4page.js` into a VM
 with a stand-in `browser` API and a form shaped like S4's, and cover the things
 that would actually corrupt a roster: that duration fields are never mistaken
 for the clock fields, that midnight and noon do not post as hour zero, that a

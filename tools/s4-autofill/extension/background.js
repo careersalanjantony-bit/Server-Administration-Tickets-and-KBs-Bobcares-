@@ -8,7 +8,10 @@
  */
 "use strict";
 
+const LOG_LIMIT = 1200;
+
 const DEFAULT_STATE = {
+  log: [],
   plan: null,
   mapping: null,
   run: {
@@ -32,6 +35,27 @@ const DEFAULT_STATE = {
 let state = JSON.parse(JSON.stringify(DEFAULT_STATE));
 let stopRequested = false;
 
+/**
+ * Append-only record of what the extension did.
+ *
+ * Everything here has, at some point, been something somebody had to describe
+ * from a screenshot: which pages were read, what the mapping came back with,
+ * why a button was refused, what S4 said to each post. Keeping it means the
+ * next question can be answered from the log instead of guessed at.
+ */
+function note(level, message, detail) {
+  if (!state.log) state.log = [];
+  state.log.push({
+    t: new Date().toISOString(),
+    level,
+    message,
+    detail: detail === undefined ? null : detail,
+  });
+  if (state.log.length > LOG_LIMIT) {
+    state.log.splice(0, state.log.length - LOG_LIMIT);
+  }
+}
+
 async function load() {
   const saved = await browser.storage.local.get("state");
   if (saved && saved.state) state = Object.assign({}, state, saved.state);
@@ -45,10 +69,14 @@ async function load() {
     state.run.note =
       `The previous run stopped after ${state.run.index || 0} of ` +
       `${state.run.total || 0} when the extension reloaded. Nothing further was sent.`;
+    note("warn", "Cleared a run left flagged as going", {
+      reached: state.run.index || 0,
+      of: state.run.total || 0,
+    });
     await browser.storage.local.set({ state });
   }
 }
-const ready = load();
+const ready = load().then(() => note("info", "Extension started"));
 
 async function save() {
   await browser.storage.local.set({ state });
@@ -159,11 +187,18 @@ function payloadsFrom(plan) {
 async function runPlan(dryRun) {
   await ready;
   if (state.run.running) throw new Error("A run is already going.");
-  if (!state.plan) throw new Error("Load a plan first.");
+  if (!state.plan) {
+    note("error", "Refused to run: no plan loaded");
+    throw new Error("Load a plan first.");
+  }
   // A dry run sends nothing, so it must never be gated on the mapping — it is
   // the thing you reach for *because* the mapping is not working yet.
-  if (!dryRun && !state.mapping) throw new Error("Find the shift form first.");
+  if (!dryRun && !state.mapping) {
+    note("error", "Refused to run: the shift form has not been found");
+    throw new Error("Find the shift form first.");
+  }
   if (!dryRun && !state.settings.allowWrites) {
+    note("error", "Refused to run: writing to S4 is locked");
     throw new Error(
       "Writing to S4 is locked. Tick \u201cAllow writing to S4\u201d first — " +
         "dry runs work without it."
@@ -179,6 +214,7 @@ async function runPlan(dryRun) {
   };
   const missing = S4Mapping.missingMapping(mapping, state.plan);
   if (!dryRun && (missing.fields.length || missing.slots.length || missing.categories.length)) {
+    note("error", "Refused to run: the mapping is incomplete", missing);
     throw new Error(
       "Refusing to post with an incomplete mapping — " +
         [
@@ -192,6 +228,11 @@ async function runPlan(dryRun) {
   }
 
   stopRequested = false;
+  note(dryRun ? "info" : "warn", dryRun ? "Dry run started" : "Live run started — writing to S4", {
+    blocks: payloads.length,
+    month: state.plan.month,
+    mapped: !!state.mapping,
+  });
   state.run = {
     running: true,
     dryRun,
@@ -259,6 +300,20 @@ async function runPlan(dryRun) {
       body: result.body,
     });
     state.run.index = i + 1;
+    if (!result.ok) {
+      note("error", `Refused: ${payload.tech_id} ${payload.start_date}→${payload.end_date}`, {
+        shift: payload.shift_time,
+        detail: result.detail,
+      });
+    } else if (!dryRun && (i < 3 || (i + 1) % 50 === 0 || i === payloads.length - 1)) {
+      // Every row is in the results table; the log keeps the shape of the run
+      // without 534 near-identical lines burying the failures.
+      note("ok", `Posted ${i + 1} of ${payloads.length}`, {
+        tech: payload.tech_id,
+        from: payload.start_date,
+        to: payload.end_date,
+      });
+    }
     await save();
 
     if (!dryRun && failures >= (state.settings.stopAfterFailures || 3)) {
@@ -273,6 +328,18 @@ async function runPlan(dryRun) {
     }
   }
   } finally {
+    const ok = state.run.results.filter((r) => r.ok).length;
+    note(
+      state.run.results.length && ok === state.run.results.length ? "ok" : "warn",
+      dryRun ? "Dry run finished" : "Live run finished",
+      {
+        done: state.run.index,
+        of: state.run.total,
+        accepted: ok,
+        refused: state.run.results.length - ok,
+        stopped: state.run.stopped || false,
+      }
+    );
     state.run.current = null;
     state.run.running = false;
     state.run.finishedAt = new Date().toISOString();
@@ -294,6 +361,12 @@ const handlers = {
     }
     state.plan = plan;
     state.run = JSON.parse(JSON.stringify(DEFAULT_STATE.run));
+    note("ok", "Plan loaded", {
+      month: plan.month,
+      blocks: plan.assignments.length,
+      techs: new Set(plan.assignments.map((a) => a.tech_id)).size,
+      shortfalls: ((plan.issues || {}).shortfalls || []).length,
+    });
     await save();
     return state;
   },
@@ -301,6 +374,7 @@ const handlers = {
   async probe() {
     await ready;
     if (!state.plan) throw new Error("Load a plan first — the labels in it drive the matching.");
+    note("info", "Looking for the shift form");
 
     const tabs = await s4Tabs();
     const looked = [];
@@ -314,10 +388,17 @@ const handlers = {
         reply = await askTab(tab.id, { type: "probe" });
       } catch (error) {
         looked.push({ url: tab.url, note: "could not be read — reload it" });
+        note("warn", "Could not read an open S4 tab", { url: tab.url, error: error.message });
         continue;
       }
       const score = scoreForms(reply.forms, state.plan);
       looked.push({ url: tab.url, score });
+      note("info", "Read an open S4 tab", {
+        url: tab.url,
+        score,
+        forms: reply.forms.length,
+        candidates: (reply.candidates || []).length,
+      });
       if (!best || score > best.score) best = { score, forms: reply.forms, tab, url: tab.url };
       if (!host || score > 0) host = tab;
       if (reply.candidates && reply.candidates.length) {
@@ -343,10 +424,15 @@ const handlers = {
         }
         if (!reply.ok) {
           looked.push({ url, note: reply.detail || `HTTP ${reply.status}` });
+          note("warn", "Could not fetch a linked page", {
+            url,
+            detail: reply.detail || `HTTP ${reply.status}`,
+          });
           continue;
         }
         const score = scoreForms(reply.forms, state.plan);
         looked.push({ url, score, fetched: true });
+        note("info", "Fetched a linked S4 page", { url, score, forms: reply.forms.length });
         if (!best || score > best.score) {
           best = { score, forms: reply.forms, tab: host, url };
         }
@@ -386,6 +472,23 @@ const handlers = {
       looked,
       forms,
     };
+    const shortfall = S4Mapping.missingMapping(state.mapping, state.plan);
+    note(
+      shortfall.fields.length || shortfall.slots.length || shortfall.categories.length
+        ? "warn"
+        : "ok",
+      "Mapping built",
+      {
+        from: best.url || tab.url,
+        fields: Object.keys(fields).length,
+        shiftTimes: Object.keys(matched.shiftTimeValues).length,
+        categories: Object.keys(matched.categoryValues).length,
+        staff: Object.keys(matched.staffValues).length,
+        missingFields: shortfall.fields,
+        missingShiftTimes: shortfall.slots,
+        missingCategories: shortfall.categories,
+      }
+    );
     await save();
     return state;
   },
@@ -406,6 +509,7 @@ const handlers = {
     state.run.running = false;
     state.run.current = null;
     state.run.note = "Run state cleared by hand.";
+    note("warn", "Run state cleared by hand");
     await save();
     return state;
   },
@@ -417,9 +521,78 @@ const handlers = {
     return state;
   },
 
+  async clearLog() {
+    await ready;
+    state.log = [];
+    note("info", "Log cleared");
+    await save();
+    return state;
+  },
+
+  /** Everything worth sending to somebody who has to work out what went wrong. */
+  async diagnostics() {
+    await ready;
+    const plan = state.plan;
+    const mapping = state.mapping;
+    return {
+      takenAt: new Date().toISOString(),
+      version: browser.runtime.getManifest().version,
+      plan: plan && {
+        month: plan.month,
+        generated: plan.generated,
+        blocks: plan.assignments.length,
+        techs: plan.techs ? plan.techs.length : null,
+        slots: plan.slots ? plan.slots.length : null,
+        issues: plan.issues || null,
+        sample: plan.assignments.slice(0, 3),
+      },
+      mapping: mapping && {
+        probedAt: mapping.probedAt,
+        foundOn: mapping.tabUrl,
+        action: mapping.action,
+        fields: mapping.fields,
+        shiftTimeValues: mapping.shiftTimeValues,
+        categoryValues: mapping.categoryValues,
+        staffCount: Object.keys(mapping.staffValues || {}).length,
+        unmatched: mapping.unmatched,
+        looked: mapping.looked,
+        // The raw field names of every form seen, which is what a mismatch
+        // always comes down to.
+        forms: (mapping.forms || []).map((form) => ({
+          name: form.name,
+          action: form.action,
+          loose: !!form.loose,
+          inputs: (form.inputs || []).map((i) => `${i.name}:${i.type}`),
+          selects: (form.selects || []).map((sel) => ({
+            name: sel.name,
+            options: (sel.options || []).slice(0, 25).map((o) => `${o.value}=${o.text}`),
+          })),
+        })),
+      },
+      missing: plan && mapping ? S4Mapping.missingMapping(mapping, plan) : null,
+      settings: state.settings,
+      run: {
+        running: state.run.running,
+        dryRun: state.run.dryRun,
+        index: state.run.index,
+        total: state.run.total,
+        stopped: state.run.stopped,
+        note: state.run.note,
+        failures: state.run.results.filter((r) => !r.ok).slice(0, 25),
+      },
+      log: state.log || [],
+    };
+  },
+
   async setSettings({ settings }) {
     await ready;
+    const before = state.settings.allowWrites;
     state.settings = Object.assign({}, state.settings, settings);
+    if (before !== state.settings.allowWrites) {
+      note("warn", state.settings.allowWrites
+        ? "Writing to S4 was unlocked"
+        : "Writing to S4 was locked again");
+    }
     await save();
     return state;
   },
