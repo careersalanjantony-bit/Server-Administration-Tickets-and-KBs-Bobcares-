@@ -55,6 +55,10 @@ Answer: ✅
 Answer: ✅ Perform migration without DNS change and test (customer to test using hosts file).
 Do a final data resync (files & database), update DNS, and test again.   ← answers can run over several lines
 
+### 36. What is the correct procedure after completing work on a customer’s Windows server?
+**Answer:** Log out properly from the Windows server      ← questions as markdown headings, "---" between them
+---
+
 | # | Question | Correct Answer |                        ← markdown table (the # column is optional)
 |---|---|---|
 | 1 | Which plan provides assistance with AnyDesk? | Dedicated Engineer Session or PLSM |

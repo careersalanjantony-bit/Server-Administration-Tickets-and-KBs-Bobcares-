@@ -508,6 +508,8 @@
   const LETTER = /^\(?([a-h])\s*[.)]\s+(.+)$/i; // "a) option", "B. option"
   const QMARK = /^(?:q|ques|question)\s*(\d{1,3})?\s*[:.)\-]\s*(.+)$/i; // "Q: ..", "Q12. ..", "Question 12: .."
   const AMARK = /^(?:(?:ans(?:wer)?s?|correct(?:\s+(?:answer|option|choice))?|right\s+answer|solution)\s*[:=\-\u2013\u2014]|a\s*[:=])\s*(.*)$/i;
+  const ANSWER_HEADING = /^(?:answers?|ans|correct\s+answer|right\s+answer|solution)\s*:?$/i; // "### Answer"
+  const QNUM_ONLY = /^(?:(?:q|ques|question)\s*#?\s*(\d{1,3})\s*[.):]?|#?(\d{1,3})\s*[.):])$/i; // "Question 5", "Q5", "5."
   const QUESTION_WORD = /^(what|which|how|why|when|where|who|whom|select|choose|match|according|if|you|is|are|do|does|can|should|in|for)\b/i;
 
   /**
@@ -586,15 +588,33 @@
     }
 
     const lines = t.split('\n').map((l) => l.trim());
-    const plainOf = (l) => l.replace(/\*\*|__/g, '').trim();
+    // Drop bold/underline markers and blockquote ">" prefixes.
+    const plainOf = (l) => l.replace(/\*\*|__/g, '').replace(/^(?:>\s*)+/, '').trim();
+    // Text of a markdown heading ("### 36. Question?"), or null.
+    const headingInner = (p) => {
+      const hm = p.match(/^#{1,6}\s+(.*)$/);
+      return hm ? hm[1].trim() : null;
+    };
+
+    // Is the next non-empty line ordinary text (not a heading, question, table or rule)?
+    const plainTextNext = (from) => {
+      for (let j = from + 1; j < lines.length; j++) {
+        const p = plainOf(lines[j]);
+        if (!p || /^```/.test(p)) continue;
+        return !(headingInner(p) != null || NUM.test(p) || QMARK.test(p) || QNUM_ONLY.test(p) || p.startsWith('|') || /^([-*_])\1{2,}$/.test(p));
+      }
+      return false;
+    };
 
     // Is there an "Answer:" line before the next question starts?
     const answerMarkerAhead = (from) => {
       for (let j = from + 1; j < lines.length && j < from + 25; j++) {
         const p = plainOf(lines[j]);
         if (!p) continue;
+        const inner = headingInner(p);
+        if (inner != null) return ANSWER_HEADING.test(inner) || AMARK.test(inner);
         if (AMARK.test(p)) return true;
-        if (NUM.test(p) || QMARK.test(p) || /^#{1,6}\s/.test(p) || p.startsWith('|')) return false;
+        if (NUM.test(p) || QMARK.test(p) || QNUM_ONLY.test(p) || p.startsWith('|')) return false;
       }
       return false;
     };
@@ -634,13 +654,32 @@
         finish();
         continue;
       }
-      const plain = plainOf(line);
+      let plain = plainOf(line);
       if (!plain) continue;
       let m;
 
-      if (/^#{1,6}\s/.test(plain)) {
-        finish();
-        continue;
+      // Markdown headings: "### 36. Question?" is a question, "### Answer" starts
+      // the answer, anything else ("## Additional Questions") is a section title.
+      const inner = headingInner(plain);
+      const fromHeading = inner != null;
+      if (fromHeading) {
+        if (cur && ANSWER_HEADING.test(inner)) {
+          cur.answering = true;
+          continue;
+        }
+        const marked = NUM.test(inner) || QMARK.test(inner) || QNUM_ONLY.test(inner) || AMARK.test(inner);
+        // An unmarked heading followed by plain text is a question too, unless it
+        // reads like a section title ("Additional Questions", "Quiz answers").
+        const textBelow = !isHeadingLike(inner) && plainTextNext(li);
+        if (!inner || !(marked || /\?$/.test(inner) || answerMarkerAhead(li) || textBelow)) {
+          finish();
+          continue;
+        }
+        if (!marked) {
+          startQ(inner, null, !answerMarkerAhead(li));
+          continue;
+        }
+        plain = inner;
       }
 
       if (line.startsWith('|')) {
@@ -657,6 +696,12 @@
         continue;
       }
 
+      // "Question 5" / "Q5" on its own line: the question text follows.
+      if ((m = plain.match(QNUM_ONLY)) && (fromHeading || !(cur && cur.answering && !cur.a.length))) {
+        startQ('', +(m[1] || m[2]), false);
+        continue;
+      }
+
       if ((m = plain.match(QMARK))) {
         startQ(m[2], m[1] ? +m[1] : null, false);
         continue;
@@ -664,11 +709,11 @@
 
       if ((m = plain.match(NUM))) {
         const n = +m[1];
-        if (cur && cur.answering && isListItem(n, m[2])) {
+        if (cur && cur.answering && !fromHeading && isListItem(n, m[2])) {
           addAnswer(plain);
           continue;
         }
-        if (cur && !cur.answering) {
+        if (cur && !cur.answering && !fromHeading) {
           const isOption = cur.num != null ? n <= cur.num : n === 1 ? cur.optItem == null : n === cur.optItem + 1;
           if (isOption) {
             // A numbered option list under the question; "check-mark" marks the answer.
@@ -697,7 +742,9 @@
         continue;
       }
 
-      const pair = !(cur && cur.answering) || /\?\s*$/.test((pairOf(line, true) || [''])[0]) ? pairOf(line, true) : null;
+      // "question | answer" one-liners - but not while a question is waiting for its
+      // answer (then a "|" is part of the answer, e.g. "ps aux | grep mysql").
+      const pair = !cur || (cur.answering && /\?\s*$/.test((pairOf(line, true) || [''])[0])) ? pairOf(line, true) : null;
       if (pair) {
         finish();
         if (!isHeader(pair) && !pair.every(isRule)) push(pair[0], [pair[1]]);
@@ -719,6 +766,11 @@
       }
 
       if (cur) {
+        if (!cur.q) {
+          cur.q = plain; // text under a "Question 5" line
+          if (/\?$/.test(plain) && !answerMarkerAhead(li)) cur.loose = true;
+          continue;
+        }
         if (cur.a.length && !answerMarkerAhead(li)) {
           // Options with a check-mark answer already seen; this is a new question.
           if (/\?$/.test(plain)) startQ(plain, null, true);

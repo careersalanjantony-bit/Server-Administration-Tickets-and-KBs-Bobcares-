@@ -203,6 +203,66 @@ test('typed-answer questions are filled but always marked for checking', () => {
   assert.equal(r.confidence, 'low');
 });
 
+test('parses markdown-heading keys ("### 36. Question" / "**Answer:**" / "---")', () => {
+  const text = [
+    '# Quiz - Full Questions & Answers',
+    '',
+    '### 35. What is the preferred method to handle load surge in Per Ledin servers',
+    '',
+    '**Answer:** Check if any website is being targeted, causing a load surge. If so, enable Attack Mode in Cloudflare for that website.',
+    '',
+    '---',
+    '',
+    '## Additional Questions You Shared Later',
+    '',
+    '### 36. What is the correct procedure after completing work on a customer\u2019s Windows server?',
+    '',
+    '**Answer:** Log out properly from the Windows server',
+    '',
+    '### Question 37',
+    'Which plan provides assistance with AnyDesk',
+    '#### Answer',
+    'Dedicated Engineer Session or PLSM',
+    '',
+    '### How many websites can be monitored in LSM plan',
+    '3',
+  ].join('\n');
+  assert.deepEqual(
+    M.parseKey(text).map((x) => [x.q, x.a]),
+    [
+      [
+        'What is the preferred method to handle load surge in Per Ledin servers',
+        'Check if any website is being targeted, causing a load surge. If so, enable Attack Mode in Cloudflare for that website.',
+      ],
+      ['What is the correct procedure after completing work on a customer\u2019s Windows server?', 'Log out properly from the Windows server'],
+      ['Which plan provides assistance with AnyDesk', 'Dedicated Engineer Session or PLSM'],
+      ['How many websites can be monitored in LSM plan', '3'],
+    ]
+  );
+});
+
+test('real quiz page: "Choose ALL correct statements about using AI" picks "All of the statements are correct"', () => {
+  const key = M.parseKey('### 15. Choose ALL correct statements about using AI for solutions\n\n**Answer:** All of the statements are correct');
+  const r = M.solve(
+    {
+      text: '14. Choose ALL correct statements about using AI for solutions',
+      options: [
+        'Never rely on a solution from a single source, especially an AI source unless crosschecked with suitable multiple references',
+        'We need to avoid making assumptions',
+        'It is important to cross-check any proposed solution using our own judgment and using multiple sources & documentations.',
+        'AI can only act as a guidance, we can not blidly trust AI as it can hallucinate by nature.',
+        'We should not share any sensitive info (IP, login, client name) in AI tools .',
+        'AI-generated content can sometimes include inaccuracies or "hallucinations" by nature.',
+        'All of the statements are correct',
+      ],
+      multi: false,
+    },
+    key
+  );
+  assert.deepEqual(r.picks, [6]);
+  assert.equal(r.confidence, 'high');
+});
+
 test('pauses when a second key entry for the question accepts two options', () => {
   const key = M.parseKey(
     [

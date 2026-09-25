@@ -68,7 +68,12 @@
 
     $('save').addEventListener('click', async () => {
       const entries = await saveKey();
-      msg(entries.length ? 'Saved.' : 'Saved, but no question/answer pairs were recognised.', entries.length ? '' : 'warn');
+      msg(
+        entries.length
+          ? 'Saved.'
+          : 'Saved, but no question/answer pairs were recognised. Put each question on its own line with its answer below it (e.g. "Answer: ...").',
+        entries.length ? '' : 'warn'
+      );
     });
 
     $('start').addEventListener('click', async () => {

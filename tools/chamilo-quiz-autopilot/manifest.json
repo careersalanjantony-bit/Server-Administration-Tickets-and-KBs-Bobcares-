@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "Chamilo Quiz Autopilot",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Answers Chamilo quiz questions from your own answer key (works with shuffled questions and options), clicks Next, and asks you before ending the test.",
   "icons": {
     "48": "icons/icon.svg",
