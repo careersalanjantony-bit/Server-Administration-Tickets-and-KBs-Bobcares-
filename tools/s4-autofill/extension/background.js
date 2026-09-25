@@ -147,7 +147,9 @@ async function runPlan(dryRun) {
   await ready;
   if (state.run.running) throw new Error("A run is already going.");
   if (!state.plan) throw new Error("Load a plan first.");
-  if (!state.mapping) throw new Error("Probe the S4 form first.");
+  // A dry run sends nothing, so it must never be gated on the mapping — it is
+  // the thing you reach for *because* the mapping is not working yet.
+  if (!dryRun && !state.mapping) throw new Error("Find the shift form first.");
   if (!dryRun && !state.settings.allowWrites) {
     throw new Error(
       "Writing to S4 is locked. Tick \u201cAllow writing to S4\u201d first — " +
@@ -156,7 +158,13 @@ async function runPlan(dryRun) {
   }
 
   const payloads = payloadsFrom(state.plan);
-  const missing = S4Mapping.missingMapping(state.mapping, state.plan);
+  const mapping = state.mapping || {
+    fields: {},
+    shiftTimeValues: {},
+    categoryValues: {},
+    staffValues: {},
+  };
+  const missing = S4Mapping.missingMapping(mapping, state.plan);
   if (!dryRun && (missing.fields.length || missing.slots.length || missing.categories.length)) {
     throw new Error(
       "Refusing to post with an incomplete mapping — " +
@@ -184,9 +192,12 @@ async function runPlan(dryRun) {
   };
   await save();
 
-  const action = state.mapping.action || "";
+  const action = mapping.action || "";
   let failures = 0;
 
+  // Anything thrown in here used to leave running stuck on, which greys out
+  // every button with no way back except clearing the results.
+  try {
   for (let i = 0; i < payloads.length; i += 1) {
     if (stopRequested) {
       state.run.stopped = true;
@@ -194,10 +205,17 @@ async function runPlan(dryRun) {
       break;
     }
     const payload = payloads[i];
-    const body = S4Mapping.buildBody(payload, state.mapping);
+    const body = S4Mapping.buildBody(payload, mapping);
     let result;
     if (dryRun) {
-      result = { ok: true, detail: "dry run — nothing sent", body };
+      const unmapped = Object.keys(body).length === 0;
+      result = {
+        ok: !unmapped,
+        detail: unmapped
+          ? "dry run — no field mapping yet, so nothing could be built"
+          : "dry run — nothing sent",
+        body,
+      };
     } else {
       try {
         result = await ask({ type: "post", body, action });
@@ -234,10 +252,11 @@ async function runPlan(dryRun) {
       await new Promise((resolve) => setTimeout(resolve, state.settings.delayMs));
     }
   }
-
-  state.run.running = false;
-  state.run.finishedAt = new Date().toISOString();
-  await save();
+  } finally {
+    state.run.running = false;
+    state.run.finishedAt = new Date().toISOString();
+    await save();
+  }
   return state.run;
 }
 

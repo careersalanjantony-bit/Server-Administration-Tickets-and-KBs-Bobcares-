@@ -44,8 +44,8 @@ Then, in Firefox:
    paste its contents.
 4. **Find the shift form** — it works out which dropdown option is which shift,
    category and tech, and tells you what it could not match.
-5. **Dry run** — sends nothing at all, no matter which month you are on.
-   Check the list.
+5. **Dry run** — sends nothing at all, no matter which month you are on, and
+   works even before the form has been found. Check the list.
 6. **Fill S4 for real** — tick **Allow writing to S4** first, since writing is
    locked on a fresh install. It then asks you to confirm, and posts with a
    progress bar and a Stop button.
@@ -121,7 +121,10 @@ It writes to a live roster, so:
   run outright; dry runs work regardless. Only one month is ever unlocked in
   S4, so a mis-click on the live button would land in a roster people are
   working to.
-- **Dry run is the default** and posts nothing at all.
+- **Dry run is the default**, posts nothing at all, and is never disabled
+  while a plan is loaded — it is the diagnostic, so gating it behind a working
+  mapping would take it away exactly when it is needed.
+- **A disabled button always says why**, underneath the buttons.
 - **A live run is refused** while any field, shift time or category is
   unmatched. It names what is missing rather than guessing.
 - **The live button asks for confirmation**, naming the month and the count.
@@ -143,7 +146,7 @@ It writes to a live roster, so:
 node --test
 ```
 
-49 tests. They load the real `background.js` and `content/s4page.js` into a VM
+55 tests. They load the real `background.js` and `content/s4page.js` into a VM
 with a stand-in `browser` API and a form shaped like S4's, and cover the things
 that would actually corrupt a roster: that duration fields are never mistaken
 for the clock fields, that midnight and noon do not post as hour zero, that a

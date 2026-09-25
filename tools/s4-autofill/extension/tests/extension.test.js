@@ -573,3 +573,79 @@ test("an incomplete mapping still blocks a live run", async () => {
   assert.match(reply.error, /incomplete mapping/i);
   assert.strictEqual(harness.posted.length, 0);
 });
+
+// ------------------------------------------------- the dry run must never jam
+// A dry run sends nothing, so gating it behind a working mapping made the one
+// diagnostic tool unusable exactly when it was needed. And a throw inside the
+// run loop used to leave `running` set, grey­ing out every button for good.
+
+test("a dry run works with no mapping at all", async () => {
+  const harness = load({ techIds: TECHS });
+  await harness.send("setPlan", { plan: samplePlan() });
+  const run = await harness.send("startRun", { dryRun: true });
+  assert.ok(!run.error, run.error);
+  assert.strictEqual(run.results.length, 2);
+  assert.strictEqual(harness.posted.length, 0);
+});
+
+test("a dry run with no mapping says why it could build nothing", async () => {
+  const harness = load({ techIds: TECHS });
+  await harness.send("setPlan", { plan: samplePlan() });
+  const run = await harness.send("startRun", { dryRun: true });
+  assert.match(run.results[0].detail, /no field mapping/i);
+  assert.strictEqual(run.results[0].ok, false);
+});
+
+test("a dry run against a half-mapped page still lists every row", async () => {
+  const harness = load({
+    techIds: TECHS,
+    grid: "https://s4.inhouse.net/index.php?action=nothing",
+  });
+  await harness.send("setPlan", { plan: samplePlan() });
+  await harness.send("probe");
+  const run = await harness.send("startRun", { dryRun: true });
+  assert.ok(!run.error, run.error);
+  assert.strictEqual(run.results.length, 2);
+  assert.strictEqual(harness.posted.length, 0);
+});
+
+test("a live run still needs the form to have been found", async () => {
+  const harness = load({ techIds: TECHS });
+  await harness.send("setPlan", { plan: samplePlan() });
+  await harness.send("setSettings", { settings: { allowWrites: true } });
+  const reply = await harness.send("startRun", { dryRun: false });
+  assert.match(reply.error, /find the shift form/i);
+  assert.strictEqual(harness.posted.length, 0);
+});
+
+test("a crash mid-run does not leave the buttons stuck", async () => {
+  const harness = load({ techIds: TECHS });
+  await harness.send("setPlan", { plan: samplePlan() });
+  await harness.send("setSettings", { settings: { delayMs: 0, allowWrites: true } });
+  await harness.send("probe");
+
+  // Force a throw from inside the loop, where nothing used to catch it.
+  const mapping = harness.backgroundGlobals.S4Mapping;
+  const real = mapping.buildBody;
+  mapping.buildBody = () => {
+    throw new TypeError("boom");
+  };
+  const reply = await harness.send("startRun", { dryRun: false });
+  mapping.buildBody = real;
+
+  assert.ok(reply.error, "the failure should surface");
+  const after = await harness.send("getState");
+  assert.strictEqual(after.run.running, false, "running must always be cleared");
+
+  // And the UI must be usable again straight away.
+  const second = await harness.send("startRun", { dryRun: true });
+  assert.ok(!second.error, `a later run should work: ${second.error}`);
+});
+
+test("the stuck-run state can be cleared by hand too", async () => {
+  const harness = load({ techIds: TECHS });
+  await harness.send("setPlan", { plan: samplePlan() });
+  await harness.send("reset");
+  const state = await harness.send("getState");
+  assert.strictEqual(state.run.running, false);
+});

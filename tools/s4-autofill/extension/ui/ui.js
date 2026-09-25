@@ -152,9 +152,26 @@ function render(state) {
   const allowed = !!(state.settings && state.settings.allowWrites);
   $("allowWrites").checked = allowed;
   $("allowWrites").disabled = busy;
-  $("dryRun").disabled = busy || !plan || !mapping;
+
+  // A dry run sends nothing, so the only thing that can stop it is not having
+  // a plan. Everything else is a reason the *live* button is off.
+  $("dryRun").disabled = busy || !plan;
   $("live").disabled = busy || !plan || !mapping || !mappingClean || !allowed;
-  $("live").title = allowed ? "" : "Locked — tick “Allow writing to S4” to enable";
+
+  // Never leave a greyed-out button without saying why.
+  const why = [];
+  if (busy) why.push("a run is going — Stop it first");
+  if (!plan) why.push("load a plan to enable the dry run");
+  if (plan && !busy) {
+    if (!mapping) why.push("find the shift form before filling for real");
+    else if (!mappingClean) why.push("the mapping is incomplete, so filling for real is off");
+    if (mapping && mappingClean && !allowed) {
+      why.push("tick “Allow writing to S4” to enable filling");
+    }
+  }
+  $("fillReason").textContent = why.length ? why.join(" · ") : "";
+  $("dryRun").title = $("dryRun").disabled ? why.join(" · ") : "Builds the posts without sending them";
+  $("live").title = $("live").disabled ? why.join(" · ") : "";
   $("probe").disabled = busy || !plan;
   $("planFile").disabled = busy;
   $("stop").hidden = !busy;
