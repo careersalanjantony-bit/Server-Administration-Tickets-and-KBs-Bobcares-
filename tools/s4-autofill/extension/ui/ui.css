@@ -14,7 +14,8 @@ body {
   background: var(--bg);
   margin: 0;
   padding: 12px;
-  width: 420px;
+  max-width: 760px;
+  margin: 0 auto;
 }
 header { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
 h1 { font-size: 15px; margin: 0 0 8px; }
@@ -56,4 +57,26 @@ td.state { width: 14px; font-weight: bold; }
 td.state.ok { color: var(--go); }
 td.state.bad { color: var(--stop); }
 td.detail { color: var(--muted); }
-#results { display: block; max-height: 210px; overflow-y: auto; }
+#results { display: block; max-height: 340px; overflow-y: auto; }
+
+.drop {
+  border: 1px dashed var(--line);
+  border-radius: 4px;
+  padding: 10px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  background: #fff;
+}
+.drop.over { border-color: var(--go); background: #F1F7E6; }
+textarea {
+  width: 100%;
+  font: 12px/1.4 monospace;
+  margin: 6px 0;
+  padding: 5px;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+}
+details { margin-top: 8px; }
+summary { cursor: pointer; }

@@ -38,8 +38,10 @@ python3 -m s4autofill plan --month 2026-11
 Then, in Firefox:
 
 1. Log in to S4 and open the shift page for the month you are filling.
-2. Click the toolbar button.
-3. **Load the plan** — pick `out/2026-11/plan.json`.
+2. Click the toolbar button. It opens the extension in its **own tab** —
+   leave the S4 tab where it is.
+3. **Load the plan** — pick `out/2026-11/plan.json`, drag it onto the box, or
+   paste its contents.
 4. **Find the shift form** — it works out which dropdown option is which shift,
    category and tech, and tells you what it could not match.
 5. **Dry run** — sends nothing at all, no matter which month you are on.
@@ -72,8 +74,10 @@ If it cannot find a shift form anywhere, it says so rather than guessing: open
 the shift edit window (the one with Category, Shift Time and Duration on it)
 and probe again.
 
-The popup can be closed mid-run. The run lives in the background script, so
-progress survives closing it and carries on.
+The UI is a tab rather than a browser_action popup, because Firefox closes a
+popup the moment it loses focus — and opening the file picker does exactly
+that, so the plan never finished loading. The tab can be closed mid-run
+regardless: the run lives in the background script and carries on.
 
 ---
 
@@ -130,14 +134,16 @@ It writes to a live roster, so:
 node --test
 ```
 
-32 tests. They load the real `background.js` and `content/s4page.js` into a VM
+37 tests. They load the real `background.js` and `content/s4page.js` into a VM
 with a stand-in `browser` API and a form shaped like S4's, and cover the things
 that would actually corrupt a roster: that duration fields are never mistaken
 for the clock fields, that midnight and noon do not post as hour zero, that a
 dry run sends nothing, that an incomplete mapping blocks a live run, that error
 pages are not counted as successes, that Stop actually stops, that the month
 written comes from the plan's dates rather than the page, and that both of S4's
-page layouts produce byte-identical POST bodies.
+page layouts produce byte-identical POST bodies, that a loaded plan is still
+there on the next read, and that the extension's own page is never mistaken
+for S4.
 
 The real October plan — 534 blocks, 868 tech-days — runs through the harness
 with all 15 shift times, all 28 staff and all 12 fields mapped, and nothing

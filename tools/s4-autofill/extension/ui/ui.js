@@ -180,16 +180,42 @@ async function refresh() {
   render(state);
 }
 
-$("planFile").addEventListener("change", async (event) => {
-  const file = event.target.files[0];
-  if (!file) return;
+async function loadPlanText(text, what) {
   try {
-    const plan = JSON.parse(await file.text());
+    const plan = JSON.parse(text);
     const state = await call("setPlan", { plan });
     if (state) render(state);
   } catch (error) {
-    showError(`Could not read that file: ${error.message}`);
+    showError(`Could not read ${what}: ${error.message}`);
   }
+}
+
+$("planFile").addEventListener("change", async (event) => {
+  const file = event.target.files[0];
+  if (!file) return;
+  await loadPlanText(await file.text(), file.name);
+});
+
+const drop = $("drop");
+["dragenter", "dragover"].forEach((name) =>
+  drop.addEventListener(name, (event) => {
+    event.preventDefault();
+    drop.classList.add("over");
+  })
+);
+["dragleave", "drop"].forEach((name) =>
+  drop.addEventListener(name, () => drop.classList.remove("over"))
+);
+drop.addEventListener("drop", async (event) => {
+  event.preventDefault();
+  const file = event.dataTransfer.files[0];
+  if (file) await loadPlanText(await file.text(), file.name);
+});
+
+$("planPasteLoad").addEventListener("click", async () => {
+  const text = $("planPaste").value.trim();
+  if (!text) return showError("Nothing pasted.");
+  await loadPlanText(text, "the pasted plan");
 });
 
 $("probe").addEventListener("click", async () => {

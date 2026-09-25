@@ -41,8 +41,41 @@ async function save() {
   await browser.storage.local.set({ state });
 }
 
+/*
+ * The UI is a tab, not a popup.
+ *
+ * Firefox closes a browser_action popup the moment it loses focus, and opening
+ * the file picker does exactly that — the popup was torn down mid-load and the
+ * plan never reached the background. A tab survives all of it, and a run that
+ * takes several minutes is easier to watch in one anyway.
+ */
+const UI_PATH = "ui/ui.html";
+
+async function openUi() {
+  const url = browser.runtime.getURL(UI_PATH);
+  const open = await browser.tabs.query({ url });
+  if (open.length) {
+    await browser.tabs.update(open[0].id, { active: true });
+    if (browser.windows) {
+      try {
+        await browser.windows.update(open[0].windowId, { focused: true });
+      } catch (error) {
+        /* the window may be gone; focusing the tab was the important part */
+      }
+    }
+    return open[0];
+  }
+  return browser.tabs.create({ url });
+}
+
+if (browser.browserAction && browser.browserAction.onClicked) {
+  browser.browserAction.onClicked.addListener(openUi);
+}
+
 async function s4Tabs() {
-  const tabs = await browser.tabs.query({ url: "*://s4.inhouse.net/*" });
+  const tabs = (await browser.tabs.query({ url: "*://s4.inhouse.net/*" })).filter(
+    (tab) => !(tab.url || "").startsWith(browser.runtime.getURL(""))
+  );
   if (!tabs.length) {
     throw new Error("No S4 tab is open. Open the shift page in a tab and try again.");
   }

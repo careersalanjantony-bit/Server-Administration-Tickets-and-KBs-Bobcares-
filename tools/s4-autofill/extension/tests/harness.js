@@ -88,17 +88,23 @@ function makeDocument(techIds, { selects = true, loose = false, noFields = false
   };
 }
 
-function makeBrowser() {
+function makeBrowser(tabs) {
   const store = {};
   const listeners = { background: [], content: [] };
   return {
+    tabs: tabs || [{ id: 1, url: "https://s4.inhouse.net/index.php?action=view_shift&t=6" }],
+    onAction: null,
     api(kind) {
       const self = this;
       return {
         runtime: {
           onMessage: { addListener: (fn) => listeners[kind].push(fn) },
           sendMessage: (message) => self.toBackground(message),
+          getURL: (path) => `moz-extension://test/${path || ""}`,
+          getManifest: () => ({ version: "test" }),
         },
+        browserAction: { onClicked: { addListener: (fn) => (self.onAction = fn) } },
+        windows: { update: async () => ({}) },
         storage: {
           local: {
             get: async (key) => (key in store ? { [key]: store[key] } : {}),
@@ -106,7 +112,25 @@ function makeBrowser() {
           },
         },
         tabs: {
-          query: async () => [{ id: 1, url: "https://s4.inhouse.net/index.php?action=view_shift" }],
+          // Honour the url filter the way the real API does, so a test can put
+          // the extension's own page alongside S4's and check it is skipped.
+          query: async (filter) => {
+            const pattern = filter && filter.url;
+            if (!pattern) return self.tabs;
+            const rx = new RegExp(
+              "^" + pattern.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*") + "$"
+            );
+            return self.tabs.filter((tab) => rx.test(tab.url));
+          },
+          update: async (id) => {
+            self.focused = id;
+            return self.tabs.find((t) => t.id === id) || {};
+          },
+          create: async ({ url }) => {
+            const tab = { id: self.tabs.length + 100, url };
+            self.tabs.push(tab);
+            return tab;
+          },
           sendMessage: async (_id, message) => self.toContent(message),
         },
       };
@@ -141,7 +165,7 @@ function load(options = {}) {
     selects = true,
   } = options;
 
-  const bus = makeBrowser();
+  const bus = makeBrowser(options.tabs);
   const posted = [];
   const mappingSource = fs.readFileSync(path.join(ROOT, "content", "mapping.js"), "utf8");
 
@@ -190,6 +214,7 @@ function load(options = {}) {
 
   return {
     posted,
+    bus,
     // Values cross out of the VM, where they carry that context's prototypes and
     // compare unequal to identical host objects. Round-tripping them keeps the
     // assertions about the data rather than about which realm made it.

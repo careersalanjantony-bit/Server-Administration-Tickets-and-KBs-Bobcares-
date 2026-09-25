@@ -345,3 +345,60 @@ test("the lock survives a reset of the run", async () => {
   const reply = await harness.send("startRun", { dryRun: false });
   assert.match(reply.error, /locked/i);
 });
+
+// ------------------------------------------------------------- the UI tab
+// The UI used to be a browser_action popup. Firefox closes a popup as soon as
+// it loses focus, and the file picker does exactly that — so the plan was lost
+// mid-load every time. It lives in a tab now.
+
+test("the plan survives being loaded", async () => {
+  const harness = load({ techIds: TECHS });
+  await harness.send("setPlan", { plan: samplePlan() });
+  const state = await harness.send("getState");
+  assert.ok(state.plan, "the plan should still be there on the next read");
+  assert.strictEqual(state.plan.assignments.length, 2);
+  assert.strictEqual(state.plan.month, "2026-10");
+});
+
+test("a loaded plan is kept across a fresh read of the state", async () => {
+  const harness = load({ techIds: TECHS });
+  await harness.send("setPlan", { plan: samplePlan() });
+  await harness.send("probe");
+  const first = await harness.send("getState");
+  const second = await harness.send("getState");
+  assert.strictEqual(second.plan.assignments.length, first.plan.assignments.length);
+  assert.ok(second.mapping, "the mapping should persist too");
+});
+
+test("clicking the toolbar button opens the UI in a tab", async () => {
+  const harness = load({ techIds: TECHS });
+  assert.ok(typeof harness.bus.onAction === "function", "a click handler is registered");
+  const before = harness.bus.tabs.length;
+  await harness.bus.onAction();
+  assert.strictEqual(harness.bus.tabs.length, before + 1);
+  assert.match(harness.bus.tabs[before].url, /ui\/ui\.html$/);
+});
+
+test("clicking again focuses the open UI tab instead of opening another", async () => {
+  const harness = load({ techIds: TECHS });
+  await harness.bus.onAction();
+  const after = harness.bus.tabs.length;
+  await harness.bus.onAction();
+  assert.strictEqual(harness.bus.tabs.length, after, "should not open a second tab");
+});
+
+test("the UI tab is never mistaken for the S4 page", async () => {
+  // tabs.query is matched loosely in the harness, so the extension's own page
+  // must be filtered out by url or the probe would try to talk to itself.
+  const harness = load({
+    techIds: TECHS,
+    tabs: [
+      { id: 9, url: "moz-extension://test/ui/ui.html" },
+      { id: 1, url: "https://s4.inhouse.net/index.php?action=view_shift&t=6" },
+    ],
+  });
+  await harness.send("setPlan", { plan: samplePlan() });
+  const state = await harness.send("probe");
+  assert.ok(!state.error, state.error);
+  assert.strictEqual(state.mapping.tabId, 1, "should settle on the S4 tab");
+});

@@ -10,6 +10,6 @@ cd "$(dirname "$0")"
 out="${1:-s4-shift-autofill.xpi}"
 rm -f "$out"
 zip -r -q -FS "$out" \
-  manifest.json background.js content popup icons \
+  manifest.json background.js content ui icons \
   -x '*.DS_Store' 'tests/*'
 echo "built $out ($(wc -c < "$out") bytes)"

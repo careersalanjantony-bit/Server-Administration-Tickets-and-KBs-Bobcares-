@@ -1,10 +1,11 @@
 {
   "manifest_version": 2,
   "name": "S4 Shift Autofill",
-  "version": "1.2",
+  "version": "1.3",
   "description": "Applies a planned monthly roster to S4 \u2014 the shifts people asked for, filled in for them.",
   "permissions": [
     "storage",
+    "tabs",
     "activeTab",
     "*://s4.inhouse.net/*"
   ],
@@ -26,7 +27,6 @@
     }
   ],
   "browser_action": {
-    "default_popup": "popup/popup.html",
     "default_icon": "icons/main.png",
     "default_title": "S4 Shift Autofill"
   },

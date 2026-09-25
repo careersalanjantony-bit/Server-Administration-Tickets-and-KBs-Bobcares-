@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <link rel="stylesheet" href="popup.css">
+  <link rel="stylesheet" href="ui.css">
   <title>S4 Shift Autofill</title>
 </head>
 <body>
@@ -14,8 +14,16 @@
 
   <section>
     <h2><span class="step">1</span> Plan</h2>
-    <input type="file" id="planFile" accept=".json,application/json">
+    <div id="drop" class="drop">
+      <input type="file" id="planFile" accept=".json,application/json">
+      <span class="muted">or drag <code>plan.json</code> here</span>
+    </div>
     <p id="planInfo" class="muted">No plan loaded.</p>
+    <details>
+      <summary class="muted tiny">paste it instead</summary>
+      <textarea id="planPaste" rows="4" placeholder="paste the contents of plan.json"></textarea>
+      <button id="planPasteLoad" type="button">Load pasted plan</button>
+    </details>
   </section>
 
   <section>
@@ -64,6 +72,6 @@
 
   <p id="error" class="error" hidden></p>
   <script src="../content/mapping.js"></script>
-  <script src="popup.js"></script>
+  <script src="ui.js"></script>
 </body>
 </html>
