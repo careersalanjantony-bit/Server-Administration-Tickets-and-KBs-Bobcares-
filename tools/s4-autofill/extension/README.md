@@ -84,6 +84,32 @@ a complete mapping:
 4. Failing all of that, reads whatever address you paste under *"the editor is
    on another page"*, which is tried first when set.
 
+### Where the form actually is
+
+`index.php?action=chkshift`, form `change_shift`. Its fields:
+
+| What | S4's name |
+|---|---|
+| tech | `uid` (hidden) |
+| category | `cat` |
+| shift time | `shift_time` |
+| dates | `sdate` / `edate` (plus `startday`/`startmonth`/`startyear` and the `end*` trio) |
+| start time | `hour`, `minute`, `ampm` |
+| duration | `duration_h`, `duration_m` |
+| note | `comment` |
+
+Two traps in that list. `duration_h` does **not** contain the substring
+`dur_h`, so hint matching on that missed both duration fields. And
+`shift_comment` is a group of seven radio buttons, not a text field, so
+anything matching on "comment" has to check the control type first.
+
+**The page only fills in against a real calendar row.** Fetched as
+`chkshift&cal_id=` with nothing after the equals, S4 still renders the form,
+but `cat` comes back with no options at all and `shift_time` with only Flexy.
+The extension therefore scrapes calendar ids out of the grid's markup and pins
+them onto that url. If it cannot find one, open a shift in S4 and paste the
+editor's address into the editor page box — that address carries a `cal_id`.
+
 ### S4 spreads the form over several pages
 
 There is no single page with everything on it. In practice:
@@ -204,7 +230,7 @@ It writes to a live roster, so:
 node --test
 ```
 
-84 tests. They load the real `background.js` and `content/s4page.js` into a VM
+91 tests. They load the real `background.js` and `content/s4page.js` into a VM
 with a stand-in `browser` API and a form shaped like S4's, and cover the things
 that would actually corrupt a roster: that duration fields are never mistaken
 for the clock fields, that midnight and noon do not post as hour zero, that a

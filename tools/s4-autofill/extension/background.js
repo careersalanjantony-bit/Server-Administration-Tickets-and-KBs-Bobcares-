@@ -567,6 +567,16 @@ const handlers = {
         if (reply.candidates && reply.candidates.length) {
           candidates = candidates.concat(reply.candidates);
         }
+        // Pin real calendar ids onto any bare "...&cal_id=" prefix: without
+        // one, S4 serves the form with its Category dropdown empty.
+        const ids = reply.calendarIds || [];
+        if (ids.length) {
+          const bare = (reply.candidates || []).filter((url) => /cal_id=$/.test(url));
+          bare.forEach((prefix) => {
+            ids.forEach((id) => candidates.push(prefix + id));
+          });
+          note("info", "Found calendar row ids in the grid", { ids, applied: bare.length });
+        }
       }
 
       const manual = (state.settings.editUrl || "").trim();

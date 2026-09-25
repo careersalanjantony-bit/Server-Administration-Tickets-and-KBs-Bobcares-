@@ -120,6 +120,28 @@
       .map(([href]) => href);
   }
 
+  /**
+   * Calendar row ids sitting in the grid's markup.
+   *
+   * The editor's url ends "...action=chkshift&cal_id=" with the number added
+   * by javascript, so scraping gives the bare prefix. Fetched with no id the
+   * page still renders the form, but its Category and Shift Time dropdowns
+   * come back empty — S4 fills those in against a real row. So the ids are
+   * pulled out separately and pinned onto the prefix.
+   */
+  function calendarIds(limit) {
+    const html = document.documentElement ? document.documentElement.innerHTML : "";
+    const ids = new Set();
+    const direct = /cal_id\s*=\s*['"]?(\d{2,})/gi;
+    let match;
+    while ((match = direct.exec(html)) !== null) ids.add(match[1]);
+    // ...and numbers sitting next to a chkshift reference, which is how the
+    // grid's onclick handlers pass them.
+    const near = /chkshift[^\n]{0,120}?(\d{3,})/gi;
+    while ((match = near.exec(html)) !== null) ids.add(match[1]);
+    return [...ids].slice(0, limit || 4);
+  }
+
   /** Fetch another S4 page with the current session and read its forms. */
   async function probeUrl(url) {
     const response = await fetch(url, { credentials: "same-origin" });
@@ -180,6 +202,7 @@
           ok: true,
           forms: probeForms(),
           candidates: candidateEditUrls(message.limit),
+          calendarIds: calendarIds(message.idLimit),
         });
       case "probeUrl":
         return probeUrl(message.url).catch((error) => ({

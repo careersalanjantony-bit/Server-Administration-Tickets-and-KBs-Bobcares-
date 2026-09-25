@@ -1097,3 +1097,116 @@ test("a field name only present on another page is borrowed", async () => {
   assert.ok(!state.error, state.error);
   assert.ok(state.mapping.fields.shift_time, "should still name the shift_time field");
 });
+
+// ---------------------------------------------- the real change_shift form
+// Read off a live probe of S4. These are the field names a post has to use,
+// and each was got wrong at least once.
+
+const CHANGE_SHIFT = [
+  {
+    name: "change_shift",
+    action: "index.php?action=chkshift",
+    inputs: (
+      "cal_id:hidden uid:hidden tid:hidden referer_team_id:hidden sdate:hidden " +
+      "edate:hidden view:hidden prv_caldate:hidden reasonComment:hidden " +
+      "startday:hidden startmonth:hidden startyear:hidden endday:hidden " +
+      "endmonth:hidden endyear:hidden hour:text minute:text ampm:radio ampm:radio " +
+      "duration_h:text duration_m:text hcl_hour:text hcl_minute:text hcl_ampm:radio " +
+      "hcl_co:checkbox shift_comment:radio shift_comment:radio comment:textarea " +
+      "countdown:text Edit:submit"
+    )
+      .split(" ")
+      .map((pair) => ({ name: pair.split(":")[0], type: pair.split(":")[1], value: "" })),
+    selects: [
+      { name: "cat", options: [] },
+      {
+        name: "shift_time",
+        options: [
+          { value: "", text: "Select" },
+          { value: "Other", text: "Flexy" },
+        ],
+      },
+      { name: "members", options: [{ value: "", text: "Select" }] },
+    ],
+  },
+];
+
+test("duration_h and duration_m are recognised", () => {
+  // "duration_h" does not contain "dur_h", so the old hints missed both.
+  const harness = load({ techIds: TECHS });
+  const fields = harness.S4Mapping.suggestFields(CHANGE_SHIFT, "shift");
+  assert.strictEqual(fields.duration_hours, "duration_h");
+  assert.strictEqual(fields.duration_minutes, "duration_m");
+});
+
+test("the duration fields are not confused with the clock fields", () => {
+  const harness = load({ techIds: TECHS });
+  const fields = harness.S4Mapping.suggestFields(CHANGE_SHIFT, "shift");
+  assert.strictEqual(fields.time_hour, "hour");
+  assert.strictEqual(fields.time_minute, "minute");
+  assert.notStrictEqual(fields.time_hour, fields.duration_hours);
+});
+
+test("a radio group is never bound to a text field", () => {
+  // shift_comment is seven radio buttons; "log" was landing on it because the
+  // name contains "comment".
+  const harness = load({ techIds: TECHS });
+  const fields = harness.S4Mapping.suggestFields(CHANGE_SHIFT, "shift");
+  assert.notStrictEqual(fields.log, "shift_comment");
+  assert.strictEqual(fields.log, "comment");
+});
+
+test("the hidden uid is taken as the staff field", () => {
+  const harness = load({ techIds: TECHS });
+  const fields = harness.S4Mapping.suggestFields(CHANGE_SHIFT, "shift");
+  assert.strictEqual(fields.staff, "uid");
+});
+
+test("the category field is named even while its dropdown is empty", () => {
+  // S4 only fills cat in against a real calendar row.
+  const harness = load({ techIds: TECHS });
+  const fields = harness.S4Mapping.suggestFields(CHANGE_SHIFT, "shift");
+  assert.strictEqual(fields.category, "cat");
+});
+
+test("every field a post needs is found on the real form", () => {
+  const harness = load({ techIds: TECHS });
+  const plan = samplePlan();
+  const matched = harness.S4Mapping.matchOptions(CHANGE_SHIFT, plan);
+  const fields = Object.assign(
+    harness.S4Mapping.suggestFields(CHANGE_SHIFT, "shift"),
+    matched.fields
+  );
+  const required = [
+    "staff", "category", "start_date", "end_date", "shift_time",
+    "time_hour", "time_minute", "duration_hours", "duration_minutes",
+  ];
+  const missing = required.filter((name) => !fields[name]);
+  assert.deepStrictEqual(missing, [], `missing: ${missing.join(", ")}`);
+});
+
+test("a dropdown of team admins does not become the staff field", () => {
+  // edit_team carries the whole user list, the team's members, and a
+  // seven-strong admin list. The admin list was winning the name.
+  const harness = load({ techIds: TECHS });
+  const plan = samplePlan();
+  const forms = [
+    {
+      name: "team",
+      action: "index.php",
+      inputs: [],
+      selects: [
+        {
+          name: "cmbTeam[]",
+          options: plan.techs.map((t, i) => ({ value: String(1900 + i), text: t.id })),
+        },
+        {
+          name: "cmbTeamAdmin[]",
+          options: [{ value: "145", text: plan.techs[0].id }],
+        },
+      ],
+    },
+  ];
+  const matched = harness.S4Mapping.matchOptions(forms, plan);
+  assert.strictEqual(matched.fields.staff, "cmbTeam[]", "the bigger list should name it");
+});

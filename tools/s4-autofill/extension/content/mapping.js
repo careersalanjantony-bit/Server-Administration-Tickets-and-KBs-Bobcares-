@@ -64,6 +64,7 @@
       unmatched: {},
     };
 
+    const best_ = {};
     forms.forEach((form) => {
       (form.selects || []).forEach((select) => {
         const options = (select.options || []).filter((o) => (o.text || "").trim());
@@ -102,16 +103,21 @@
           result.unmatched[select.name] = missed.slice(0, 12);
           return;
         }
-        if (counts[0] === best) {
-          Object.assign(result.shiftTimeValues, slotHits);
-          result.fields.shift_time = select.name;
-        } else if (counts[1] === best) {
-          Object.assign(result.categoryValues, categoryHits);
-          result.fields.category = select.name;
-        } else {
-          Object.assign(result.staffValues, staffHits);
-          result.fields.staff = select.name;
-        }
+        // Only the dropdown with the most matches gets to name the field. A
+        // page can carry several: edit_team has the whole user list, the team's
+        // own members, and a seven-strong team-admin list — and the admin list
+        // was ending up as the staff field name.
+        const claim = (kind, hits, values) => {
+          Object.assign(values, hits);
+          const size = Object.keys(hits).length;
+          if (size > (best_[kind] || 0)) {
+            best_[kind] = size;
+            result.fields[kind] = select.name;
+          }
+        };
+        if (counts[0] === best) claim("shift_time", slotHits, result.shiftTimeValues);
+        else if (counts[1] === best) claim("category", categoryHits, result.categoryValues);
+        else claim("staff", staffHits, result.staffValues);
         if (missed.length) result.unmatched[select.name] = missed.slice(0, 12);
       });
     });
@@ -119,19 +125,28 @@
     return result;
   }
 
-  // Text-input names S4 uses. Checked as lowercase substrings, longest hint
-  // first so "duration_hour" never gets claimed by the plain "hour" rule.
+  // Field names S4 actually uses, read off the change_shift form. Checked as
+  // lowercase substrings, longest hint first so "duration_h" is never claimed
+  // by the plain "hour" rule. `avoid` keeps a name off a control that cannot
+  // hold the value: "log" was binding to shift_comment, a group of seven radio
+  // buttons, simply because the name contains "comment".
   const FIELD_HINTS = [
     ["start_date", ["sdate", "startdate", "start"]],
     ["end_date", ["edate", "enddate", "end"]],
-    ["duration_hours", ["dur_hr", "dur_h", "durationhour", "duration_hour", "durhour"]],
-    ["duration_minutes", ["dur_min", "dur_m", "durationmin", "duration_min", "durmin"]],
-    ["time_meridiem", ["ampm", "am_pm", "meridiem", "stime_ampm"]],
+    // S4 spells these duration_h / duration_m — note that "duration_h" does
+    // not contain "dur_h", which is why they went unmatched for so long.
+    ["duration_hours", ["duration_h", "dur_hr", "dur_h", "durationhour", "durhour"]],
+    ["duration_minutes", ["duration_m", "dur_min", "dur_m", "durationmin", "durmin"]],
+    ["time_meridiem", ["ampm", "am_pm", "meridiem"]],
     ["time_hour", ["stime_hr", "time_hh", "hour", "_hr", "hh"]],
     ["time_minute", ["stime_min", "time_mm", "minute", "_min", "mm"]],
-    ["reason", ["reason"]],
-    ["log", ["log", "comment"]],
-    ["staff", ["staff", "user", "emp", "tech"]],
+    // Named as well as matched by its options, because the dropdown comes
+    // back empty unless the page was opened against a real calendar row.
+    ["shift_time", ["shift_time", "shifttime"]],
+    ["category", ["cat", "category"]],
+    ["staff", ["uid", "staff", "emp", "tech", "member"]],
+    ["reason", ["reasoncomment", "reason"], ["radio", "checkbox", "submit", "button"]],
+    ["log", ["comment", "log"], ["radio", "checkbox", "submit", "button"]],
   ];
 
   function suggestFields(forms, formName) {
@@ -141,19 +156,28 @@
     const ordered = (forms || [])
       .filter((f) => f.name === formName)
       .concat((forms || []).filter((f) => f.name !== formName));
-    const names = [];
+    const controls = [];
     ordered.forEach((form) => {
-      (form.inputs || []).forEach((i) => i.name && names.push(i.name));
-      (form.selects || []).forEach((s) => s.name && names.push(s.name));
+      (form.inputs || []).forEach((i) => {
+        if (i.name) controls.push({ name: i.name, type: (i.type || "text").toLowerCase() });
+      });
+      (form.selects || []).forEach((s) => {
+        if (s.name) controls.push({ name: s.name, type: "select" });
+      });
     });
     const fields = {};
     const taken = new Set();
-    FIELD_HINTS.forEach(([field, hints]) => {
+    FIELD_HINTS.forEach(([field, hints, avoid]) => {
       for (const hint of hints) {
-        const hit = names.find((n) => !taken.has(n) && n.toLowerCase().includes(hint));
+        const hit = controls.find(
+          (c) =>
+            !taken.has(c.name) &&
+            c.name.toLowerCase().includes(hint) &&
+            !(avoid && avoid.indexOf(c.type) !== -1)
+        );
         if (hit) {
-          fields[field] = hit;
-          taken.add(hit);
+          fields[field] = hit.name;
+          taken.add(hit.name);
           return;
         }
       }
