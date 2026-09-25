@@ -268,13 +268,26 @@ function load(options = {}) {
   vm.createContext(contentContext);
   loadDeclared(contentContext, MANIFEST.content_scripts[0].js);
 
+  // The globals a real background page has. Leaving one out does not make the
+  // product wrong, it makes the fixture lie — which is how the missing
+  // S4Mapping went unnoticed.
   const backgroundContext = {
     console,
     browser: bus.api("background"),
     setTimeout,
+    setInterval,
+    clearTimeout,
+    clearInterval,
+    URL,
+    URLSearchParams,
+    TextEncoder,
+    TextDecoder,
     Date,
     JSON,
     Promise,
+    Math,
+    Set,
+    Map,
   };
   backgroundContext.globalThis = backgroundContext;
   vm.createContext(backgroundContext);

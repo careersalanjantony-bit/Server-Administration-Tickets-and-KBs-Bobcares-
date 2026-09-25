@@ -858,3 +858,104 @@ test("diagnostics stay small enough to paste", async () => {
   assert.ok(size < 200000, `diagnostics are ${size} bytes`);
   assert.strictEqual(diag.plan.sample.length, 2, "a sample of the plan, not all of it");
 });
+
+// -------------------------------------------- building the editor address
+// S4 opens the editor from javascript that assembles the url from pieces, so
+// there is no whole address in the markup to scrape — the grid's links led to
+// action=edit_timings, which has the shift times on it but no staff, no
+// category and no dates. The shape is known, and the plan carries the month
+// and the team, so it can be written out instead.
+
+const BUILT =
+  "https://s4.inhouse.net/index.php?action=view_shift&sdate=2026-10-01&edate=2026-10-31&t=6&edit_co_shift=N";
+
+test("the editor address is built from the plan's month and team", async () => {
+  const plan = samplePlan({ team_id: 6 });
+  const editor = makeDocument(TECHS, {});
+  const harness = load({
+    techIds: TECHS,
+    grid: "https://s4.inhouse.net/index.php?action=edit_timings",
+    pages: { [BUILT]: "EDITOR" },
+    documents: { EDITOR: editor },
+  });
+  await harness.send("setPlan", { plan });
+  const state = await harness.send("probe");
+  assert.ok(!state.error, state.error);
+  assert.ok(harness.fetched.includes(BUILT), `tried: ${harness.fetched.join(", ")}`);
+  assert.strictEqual(Object.keys(state.mapping.shiftTimeValues).length, 15);
+  assert.strictEqual(state.mapping.tabUrl, BUILT);
+});
+
+test("the month drives the dates in the built address", async () => {
+  const plan = samplePlan({ month: "2026-02", team_id: 6 });
+  const feb = "https://s4.inhouse.net/index.php?action=view_shift&sdate=2026-02-01&edate=2026-02-28&t=6&edit_co_shift=N";
+  const harness = load({
+    techIds: TECHS,
+    grid: "https://s4.inhouse.net/index.php?action=edit_timings",
+    pages: { [feb]: "EDITOR" },
+    documents: { EDITOR: makeDocument(TECHS, {}) },
+  });
+  await harness.send("setPlan", { plan });
+  await harness.send("probe");
+  assert.ok(harness.fetched.includes(feb), `tried: ${harness.fetched.join(", ")}`);
+});
+
+test("a pasted address still wins over the built one", async () => {
+  const pasted = "https://s4.inhouse.net/index.php?action=whatever_they_gave_us";
+  const harness = load({
+    techIds: TECHS,
+    grid: "https://s4.inhouse.net/index.php?action=edit_timings",
+    pages: { [pasted]: "EDITOR" },
+    documents: { EDITOR: makeDocument(TECHS, {}) },
+  });
+  await harness.send("setPlan", { plan: samplePlan({ team_id: 6 }) });
+  await harness.send("setSettings", { settings: { editUrl: pasted } });
+  await harness.send("probe");
+  assert.strictEqual(harness.fetched[0], pasted);
+});
+
+test("a page with only the shift times is not mistaken for the editor", async () => {
+  // action=edit_timings matched 14 shift times and nothing else, which is
+  // exactly the state that looked like progress but could not post.
+  const timings = { ...makeDocument(TECHS, {}) };
+  const harness = load({ techIds: TECHS });
+  await harness.send("setPlan", { plan: samplePlan({ team_id: 6 }) });
+  await harness.send("setSettings", { settings: { allowWrites: true } });
+  await harness.send("probe");
+  const state = await harness.send("getState");
+  // The good page maps everything; prove an incomplete one would be refused.
+  const partial = {
+    fields: { start_date: "sdate" },
+    shiftTimeValues: state.mapping.shiftTimeValues,
+    categoryValues: {},
+    staffValues: {},
+  };
+  const missing = harness.S4Mapping.missingMapping(partial, samplePlan());
+  assert.ok(missing.fields.includes("staff"));
+  assert.ok(missing.categories.length, "no categories means no live run");
+});
+
+test("a mapping from an earlier session is dropped when a new plan loads", async () => {
+  // The panel showed "14 shift times · found on: edit_timings" with only two
+  // log lines behind it — a mapping left in storage by a previous install.
+  const harness = gridHarness();
+  await harness.send("setPlan", { plan: samplePlan() });
+  await harness.send("probe");
+  const withMapping = await harness.send("getState");
+  assert.ok(withMapping.mapping, "probed once");
+
+  const state = await harness.send("setPlan", { plan: samplePlan({ month: "2026-12" }) });
+  assert.strictEqual(state.mapping, null, "a different month must re-probe");
+  assert.ok(
+    (state.log || []).some((e) => /earlier session/.test(e.message)),
+    "and say so"
+  );
+});
+
+test("reloading the same month's plan keeps the mapping", async () => {
+  const harness = gridHarness();
+  await harness.send("setPlan", { plan: samplePlan() });
+  await harness.send("probe");
+  const state = await harness.send("setPlan", { plan: samplePlan() });
+  assert.ok(state.mapping, "same month, no need to probe again");
+});

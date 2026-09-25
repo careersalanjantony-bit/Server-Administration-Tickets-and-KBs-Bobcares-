@@ -150,6 +150,32 @@ async function ask(message) {
  * rather than making somebody pick the right window, every open S4 tab is
  * probed and the one carrying the real form wins.
  */
+/**
+ * Addresses the editor is likely to live at, built rather than scraped.
+ *
+ * S4 opens the editor from javascript that assembles the url out of pieces, so
+ * there is no whole address in the markup to find. The shape is known though —
+ * index.php?action=view_shift&sdate=…&edate=…&t=…&edit_co_shift=N — and the
+ * plan carries both the month and the team, so it can simply be written out.
+ */
+function constructedCandidates(plan, origin) {
+  if (!plan || !plan.month) return [];
+  const [year, month] = plan.month.split("-").map(Number);
+  if (!year || !month) return [];
+  const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  const first = `${plan.month}-01`;
+  const last = `${plan.month}-${String(lastDay).padStart(2, "0")}`;
+  const team = plan.team_id;
+  const urls = [];
+  const add = (query) => urls.push(`${origin}/index.php?${query}`);
+  if (team !== undefined && team !== null) {
+    add(`action=view_shift&sdate=${first}&edate=${last}&t=${team}&edit_co_shift=N`);
+    add(`action=view_shift&sdate=${first}&edate=${last}&t=${team}&edit_co_shift=Y`);
+  }
+  add(`action=view_shift&sdate=${first}&edate=${last}&edit_co_shift=N`);
+  return urls;
+}
+
 /** Has this page got everything a live run needs? */
 function isComplete(forms, plan) {
   const matched = S4Mapping.matchOptions(forms, plan);
@@ -361,6 +387,13 @@ const handlers = {
     }
     state.plan = plan;
     state.run = JSON.parse(JSON.stringify(DEFAULT_STATE.run));
+    // A mapping read against a different plan (or a previous install) is
+    // misleading rather than useful — the panel showed one with no log behind
+    // it, which read as if a probe had just run.
+    if (state.mapping && state.mapping.forPlanMonth !== plan.month) {
+      state.mapping = null;
+      note("info", "Cleared a mapping from an earlier session");
+    }
     note("ok", "Plan loaded", {
       month: plan.month,
       blocks: plan.assignments.length,
@@ -410,11 +443,18 @@ const handlers = {
     // its own window, so what is on screen is usually not what we need. Read
     // the pages the grid links to, and anything the person named by hand.
     const manual = (state.settings.editUrl || "").trim();
-    const toRead = (manual ? [manual] : []).concat(
-      candidates.filter((url) => url !== manual)
-    );
+    const origin = host ? new URL(host.url).origin : "https://s4.inhouse.net";
+    const built = constructedCandidates(state.plan, origin);
+    const seen = new Set();
+    // Pasted address first, then the ones we can write from the plan, then
+    // whatever the page actually linked to.
+    const toRead = [].concat(manual ? [manual] : [], built, candidates).filter((url) => {
+      if (!url || seen.has(url)) return false;
+      seen.add(url);
+      return true;
+    });
     if (host && toRead.length && (!best || !isComplete(best.forms, state.plan))) {
-      for (const url of toRead.slice(0, manual ? 9 : 8)) {
+      for (const url of toRead.slice(0, 12)) {
         let reply;
         try {
           reply = await askTab(host.id, { type: "probeUrl", url });
@@ -467,6 +507,7 @@ const handlers = {
       constantFields: state.mapping ? state.mapping.constantFields || {} : {},
       action: target ? target.action : "",
       probedAt: new Date().toISOString(),
+      forPlanMonth: state.plan.month,
       tabId: tab.id,
       tabUrl: best.url || tab.url,
       looked,

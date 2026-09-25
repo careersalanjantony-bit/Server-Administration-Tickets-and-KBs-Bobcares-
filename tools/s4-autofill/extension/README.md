@@ -74,11 +74,20 @@ So **Find the shift form** does three things in turn, stopping as soon as it has
 a complete mapping:
 
 1. Probes every open S4 tab.
-2. Pulls the urls out of the grid's own markup — links and `window.open(…)`
-   calls alike — ranks the ones that look like the editor first, and reads
-   those pages with the session already in the browser.
-3. Failing that, reads whatever address you paste under *"the editor is on
-   another page"*.
+2. **Writes the editor's address out** from the plan's month and team, since
+   the shape is known —
+   `index.php?action=view_shift&sdate=…&edate=…&t=…&edit_co_shift=N`. S4 opens
+   the editor from javascript that assembles the url in pieces, so there is
+   often no whole address in the markup to find.
+3. Pulls whatever urls *are* in the grid's markup — links and `window.open(…)`
+   calls alike — and reads those.
+4. Failing all of that, reads whatever address you paste under *"the editor is
+   on another page"*, which is tried first when set.
+
+Watch out for a page that matches the shift times and nothing else:
+`action=edit_timings` is S4's list of shift timings, so it maps all the slots
+while having no staff, no category and no dates. That is not the editor, and a
+live run is refused on it.
 
 It reports which page it settled on, and lists anything it could not match
 rather than guessing.
@@ -182,7 +191,7 @@ It writes to a live roster, so:
 node --test
 ```
 
-70 tests. They load the real `background.js` and `content/s4page.js` into a VM
+76 tests. They load the real `background.js` and `content/s4page.js` into a VM
 with a stand-in `browser` API and a form shaped like S4's, and cover the things
 that would actually corrupt a roster: that duration fields are never mistaken
 for the clock fields, that midnight and noon do not post as hour zero, that a
