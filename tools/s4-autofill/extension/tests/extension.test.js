@@ -738,7 +738,7 @@ test("the probe records every page it looked at", async () => {
   const state = await harness.send("probe");
   assert.ok(messages(state).includes("Looking for the shift form"));
   assert.ok(messages(state).includes("Read an open S4 tab"));
-  assert.ok(messages(state).includes("Fetched a linked S4 page"));
+  assert.ok(messages(state).includes("Read a linked S4 page"));
   const built = state.log.find((e) => e.message === "Mapping built");
   assert.strictEqual(built.detail.shiftTimes, 15);
   assert.strictEqual(built.level, "ok");
@@ -829,9 +829,12 @@ test("diagnostics carry the form's real field names", async () => {
   await harness.send("probe");
   const diag = await harness.send("diagnostics");
   assert.ok(diag.mapping, "should include the mapping");
-  const names = diag.mapping.forms.flatMap((f) => f.inputs);
+  const names = diag.mapping.pages.flatMap((p) => p.forms.flatMap((f) => f.inputs));
   assert.ok(names.some((n) => n.startsWith("sdate")), JSON.stringify(names));
-  assert.ok(diag.mapping.forms.some((f) => f.selects.length), "and the dropdowns");
+  assert.ok(
+    diag.mapping.pages.some((p) => p.forms.some((f) => f.selects.length)),
+    "and the dropdowns"
+  );
 });
 
 test("diagnostics say what is missing and where it looked", async () => {
@@ -958,4 +961,139 @@ test("reloading the same month's plan keeps the mapping", async () => {
   await harness.send("probe");
   const state = await harness.send("setPlan", { plan: samplePlan() });
   assert.ok(state.mapping, "same month, no need to probe again");
+});
+
+// ------------------------------------- S4 spreads the form over several pages
+// The log showed the pieces scattered: action=edit_timings had the fourteen
+// shift times and nothing else, while add_shift and manage_shift each had the
+// twenty-eight staff. Scoring by raw counts picked the timings page, which
+// cannot post anything.
+
+function pageWith(over) {
+  const doc = makeDocument(TECHS, over);
+  return doc;
+}
+
+test("the page that supplies the most required fields wins, not the biggest count", async () => {
+  const plan = samplePlan({ team_id: 6 });
+  const TIMINGS = "https://s4.inhouse.net/index.php?action=edit_timings";
+  const ADD = "https://s4.inhouse.net/index.php?action=add_shift";
+  const harness = load({
+    techIds: TECHS,
+    grid: [TIMINGS, ADD],
+    pages: { [TIMINGS]: "T", [ADD]: "A" },
+    documents: {
+      // shift times only, like the real timings page
+      T: makeDocument([], { noFields: true, selects: false }),
+      // the real form
+      A: makeDocument(TECHS, {}),
+    },
+  });
+  await harness.send("setPlan", { plan });
+  const state = await harness.send("probe");
+  assert.ok(!state.error, state.error);
+  assert.strictEqual(state.mapping.tabUrl, ADD, "should post to the page with the fields");
+});
+
+test("option values are merged from whichever page had them", async () => {
+  const plan = samplePlan({ team_id: 6 });
+  const A = "https://s4.inhouse.net/index.php?action=add_shift";
+  // The grid page carries the staff dropdown; the fetched page carries the rest.
+  const harness = load({
+    techIds: TECHS,
+    grid: A,
+    pages: { [A]: "A" },
+    documents: { A: makeDocument(TECHS, {}) },
+  });
+  await harness.send("setPlan", { plan });
+  const state = await harness.send("probe");
+  assert.strictEqual(Object.keys(state.mapping.shiftTimeValues).length, 15);
+  assert.strictEqual(Object.keys(state.mapping.staffValues).length, 2);
+  assert.ok(state.mapping.contributed, "should record which page gave what");
+});
+
+test("every page read is kept for diagnosis, not just the chosen one", async () => {
+  const harness = gridHarness();
+  await harness.send("setPlan", { plan: samplePlan() });
+  await harness.send("probe");
+  const diag = await harness.send("diagnostics");
+  assert.ok(Array.isArray(diag.mapping.pages), "diagnostics should list the pages");
+  assert.ok(diag.mapping.pages.length >= 2, `only ${diag.mapping.pages.length} page(s)`);
+  const names = diag.mapping.pages.flatMap((p) => p.forms.flatMap((f) => f.inputs));
+  assert.ok(names.length, "with the raw field names on them");
+});
+
+// --------------------------------------------------- probing and running clash
+
+test("a run cannot start while the probe is still going", async () => {
+  const harness = load({ techIds: TECHS });
+  await harness.send("setPlan", { plan: samplePlan() });
+  const probing = harness.send("probe");
+  const reply = await harness.send("startRun", { dryRun: true });
+  assert.ok(reply.error, "should refuse");
+  assert.match(reply.error, /still looking/i);
+  await probing;
+});
+
+test("probing twice at once is refused", async () => {
+  const harness = gridHarness();
+  await harness.send("setPlan", { plan: samplePlan() });
+  const first = harness.send("probe");
+  const second = await harness.send("probe");
+  assert.ok(second.error);
+  assert.match(second.error, /already looking/i);
+  await first;
+});
+
+test("the probing flag is cleared when the extension starts", async () => {
+  const harness = load({ techIds: TECHS });
+  await harness.send("setPlan", { plan: samplePlan() });
+  const stuck = await harness.send("getState");
+  stuck.probing = true;
+  const restarted = load({ techIds: TECHS, storage: { state: stuck } });
+  const state = await restarted.send("getState");
+  assert.strictEqual(state.probing, false);
+});
+
+test("an unmapped dry run says so once, not on every row", async () => {
+  const plan = samplePlan({
+    assignments: Array.from({ length: 40 }, () => ({
+      tech_id: "mojin.t", category: "W", slot_id: "s0",
+      shift_time: "06:58am-02:58pm", start_date: "01-Oct-2026",
+      end_date: "01-Oct-2026", days: 1, time: "06:58", duration_min: 480,
+      reason: "x", source: "minimum",
+    })),
+  });
+  const harness = load({ techIds: TECHS });
+  await harness.send("setPlan", { plan });
+  await harness.send("startRun", { dryRun: true });
+  const state = await harness.send("getState");
+  const refusals = (state.log || []).filter((e) => /^Refused: /.test(e.message));
+  assert.strictEqual(refusals.length, 0, `logged ${refusals.length} per-row refusals`);
+  assert.ok(
+    (state.log || []).some((e) => /no field mapping/i.test(e.message)),
+    "but should say it once"
+  );
+});
+
+test("a field name only present on another page is borrowed", async () => {
+  const plan = samplePlan({ team_id: 6 });
+  const TIMINGS = "https://s4.inhouse.net/index.php?action=edit_timings";
+  const ADD = "https://s4.inhouse.net/index.php?action=add_shift";
+  // The posting page has no shift_time dropdown; the timings page does.
+  const withoutShiftTime = makeDocument(TECHS, {});
+  withoutShiftTime.forms[0].querySelectorAll = (selector) => {
+    const all = makeDocument(TECHS, {}).forms[0].querySelectorAll(selector);
+    return all.filter((el) => el.name !== "shift_time");
+  };
+  const harness = load({
+    techIds: TECHS,
+    grid: [TIMINGS, ADD],
+    pages: { [TIMINGS]: "T", [ADD]: "A" },
+    documents: { T: makeDocument(TECHS, {}), A: withoutShiftTime },
+  });
+  await harness.send("setPlan", { plan });
+  const state = await harness.send("probe");
+  assert.ok(!state.error, state.error);
+  assert.ok(state.mapping.fields.shift_time, "should still name the shift_time field");
 });

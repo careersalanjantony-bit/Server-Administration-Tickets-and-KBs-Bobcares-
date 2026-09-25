@@ -132,13 +132,14 @@ function renderResults(run) {
   });
 }
 
-function renderStatus(run, busy) {
+function renderStatus(run, busy, probing) {
   const box = $("status");
   const pct = run.total ? Math.round((run.index / run.total) * 100) : 0;
   $("bar").style.width = pct + "%";
 
   let label = "Idle";
-  if (busy) label = run.dryRun ? "Dry run going" : "Filling S4";
+  if (probing) label = "Looking for the shift form";
+  else if (busy) label = run.dryRun ? "Dry run going" : "Filling S4";
   else if (run.total && run.index >= run.total) label = "Finished";
   else if (run.total) label = "Stopped";
   $("statusState").textContent = label;
@@ -158,7 +159,7 @@ function renderStatus(run, busy) {
     : "";
 
   // The only way out of a run that says it is going but is not.
-  $("unstick").hidden = !busy;
+  $("unstick").hidden = !run.running;
   box.classList.toggle("going", busy);
 }
 
@@ -235,7 +236,7 @@ function render(state) {
   if (mapping && !mappingClean) $("editorDetails").open = true;
   const mappingClean = listProblems(mapping, plan);
 
-  const busy = run.running;
+  const busy = run.running || state.probing;
   const allowed = !!(state.settings && state.settings.allowWrites);
   $("allowWrites").checked = allowed;
   $("allowWrites").disabled = busy;
@@ -247,7 +248,8 @@ function render(state) {
 
   // Never leave a greyed-out button without saying why.
   const why = [];
-  if (busy) why.push("a run is going — Stop it first");
+  if (state.probing) why.push("still looking for the shift form — this takes a few seconds");
+  else if (busy) why.push("a run is going — Stop it first");
   if (!plan) why.push("load a plan to enable the dry run");
   if (plan && !busy) {
     if (!mapping) why.push("find the shift form before filling for real");
@@ -260,10 +262,11 @@ function render(state) {
   $("dryRun").title = $("dryRun").disabled ? why.join(" · ") : "Builds the posts without sending them";
   $("live").title = $("live").disabled ? why.join(" · ") : "";
   $("probe").disabled = busy || !plan;
+  $("probe").textContent = state.probing ? "Looking…" : "Find the shift form";
   $("planFile").disabled = busy;
   $("stop").hidden = !busy;
 
-  renderStatus(run, busy);
+  renderStatus(run, busy, !!state.probing);
   const notes = planNotes(plan, mapping).concat(run.note ? [run.note] : []);
   $("runNote").hidden = notes.length === 0;
   $("runNote").textContent = notes.join("  ");
@@ -322,10 +325,12 @@ $("planPasteLoad").addEventListener("click", async () => {
 });
 
 $("probe").addEventListener("click", async () => {
+  $("probe").disabled = true;
   $("probe").textContent = "Looking…";
+  refresh();
   const state = await call("probe");
-  $("probe").textContent = "Find the shift form";
   if (state) render(state);
+  else refresh();
 });
 
 $("editUrlSave").addEventListener("click", async () => {

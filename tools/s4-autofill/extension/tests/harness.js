@@ -110,7 +110,8 @@ function makeDocument(techIds, { selects = true, loose = false, noFields = false
  * <form name="shift">, two date boxes, and links that open the editor in
  * another window. No Category, no Shift Time, no Duration.
  */
-function makeGridDocument(editUrl) {
+function makeGridDocument(editUrls) {
+  const urls = Array.isArray(editUrls) ? editUrls : [editUrls];
   const inputs = [
     { name: "sdate", type: "text", value: "01-Oct-2026" },
     { name: "edate", type: "text", value: "31-Oct-2026" },
@@ -135,7 +136,7 @@ function makeGridDocument(editUrl) {
     documentElement: {
       innerHTML:
         `<a href="index.php?action=view_shift&amp;t=6&amp;y=2026&amp;m=10">Oct</a>` +
-        `<td onclick="window.open('${editUrl}')">shift</td>` +
+        urls.map((url) => `<td onclick="window.open('${url}')">shift</td>`).join("") +
         `<a href="index.php?action=log">Log</a>`,
     },
     querySelectorAll: (selector) => pick(selector, inputs, selects),

@@ -12,6 +12,7 @@ const LOG_LIMIT = 1200;
 
 const DEFAULT_STATE = {
   log: [],
+  probing: false,
   plan: null,
   mapping: null,
   run: {
@@ -63,6 +64,7 @@ async function load() {
   // A persisted "running" cannot be true. This background page has only just
   // started, so whatever loop set that flag is long gone — and every control
   // in the UI keys off it, so leaving it set locks the page permanently.
+  state.probing = false;
   if (state.run && state.run.running) {
     state.run.running = false;
     state.run.stopped = true;
@@ -176,34 +178,131 @@ function constructedCandidates(plan, origin) {
   return urls;
 }
 
-/** Has this page got everything a live run needs? */
-function isComplete(forms, plan) {
+const REQUIRED_FIELDS = [
+  "staff", "category", "start_date", "end_date", "shift_time",
+  "time_hour", "time_minute", "duration_hours", "duration_minutes",
+];
+
+/**
+ * What one page is worth.
+ *
+ * Counting matches rewarded the wrong page: action=edit_timings matched
+ * fourteen shift times and scored highest, while add_shift — which carries the
+ * staff list and is plainly the form that posts a shift — scored lower with no
+ * shift times on it. What matters is how many of the fields a post actually
+ * needs a page can supply, so that is what is counted first.
+ */
+function readPage(forms, plan) {
   const matched = S4Mapping.matchOptions(forms, plan);
   const fields = Object.assign(
     S4Mapping.suggestFields(forms, plan.form_name || "shift"),
     matched.fields
   );
-  const missing = S4Mapping.missingMapping(
-    {
-      fields,
-      shiftTimeValues: matched.shiftTimeValues,
-      categoryValues: matched.categoryValues,
-      staffValues: matched.staffValues,
-    },
-    plan
-  );
-  return !missing.fields.length && !missing.slots.length && !missing.categories.length;
+  const requiredFields = REQUIRED_FIELDS.filter((name) => fields[name]).length;
+  return {
+    fields,
+    matched,
+    requiredFields,
+    shiftTimes: Object.keys(matched.shiftTimeValues).length,
+    categories: Object.keys(matched.categoryValues).length,
+    staff: Object.keys(matched.staffValues).length,
+    // Kept only as a tie-break between pages that supply the same fields.
+    weight:
+      Object.keys(matched.shiftTimeValues).length +
+      Object.keys(matched.categoryValues).length +
+      Object.keys(matched.staffValues).length,
+  };
 }
 
-function scoreForms(forms, plan) {
-  const matched = S4Mapping.matchOptions(forms, plan);
-  const fields = S4Mapping.suggestFields(forms, plan.form_name || "shift");
-  return (
-    Object.keys(matched.shiftTimeValues).length * 3 +
-    Object.keys(matched.categoryValues).length * 2 +
-    Object.keys(matched.staffValues).length +
-    Object.keys(Object.assign(fields, matched.fields)).length
+function betterPage(a, b) {
+  if (!a) return b;
+  if (!b) return a;
+  if (b.requiredFields !== a.requiredFields) {
+    return b.requiredFields > a.requiredFields ? b : a;
+  }
+  return b.weight > a.weight ? b : a;
+}
+
+function isComplete(read) {
+  return read && read.requiredFields === REQUIRED_FIELDS.length;
+}
+
+/** Trim a page's forms down to what is worth keeping for diagnosis. */
+function summariseForms(forms) {
+  return (forms || []).map((form) => ({
+    name: form.name,
+    action: form.action,
+    loose: !!form.loose,
+    inputs: (form.inputs || []).map((i) => `${i.name}:${i.type}`),
+    selects: (form.selects || []).map((sel) => ({
+      name: sel.name,
+      count: (sel.options || []).length,
+      sample: (sel.options || []).slice(0, 8).map((o) => `${o.value}=${o.text}`),
+    })),
+  }));
+}
+
+async function s4Tabs() {
+  const tabs = (await browser.tabs.query({ url: "*://s4.inhouse.net/*" })).filter(
+    (tab) => !(tab.url || "").startsWith(browser.runtime.getURL(""))
   );
+  if (!tabs.length) {
+    throw new Error("No S4 tab is open. Open the shift page in a tab and try again.");
+  }
+  return tabs;
+}
+
+async function askTab(tabId, message) {
+  try {
+    return await browser.tabs.sendMessage(tabId, message);
+  } catch (error) {
+    throw new Error(
+      "Could not reach the S4 page. Reload the S4 tab so the extension loads into it, " +
+        `then try again. (${error.message})`
+    );
+  }
+}
+
+/** Talk to the tab the probe settled on, or the only one there is. */
+async function ask(message) {
+  const tabs = await s4Tabs();
+  const chosen =
+    (state.mapping && tabs.find((t) => t.id === state.mapping.tabId)) || tabs[0];
+  return askTab(chosen.id, message);
+}
+
+/**
+ * How useful a page's forms look.
+ *
+ * S4 spreads this over two windows: the month grid holds an empty
+ * <form name="shift">, and the edit popup holds the controls that matter. So
+ * rather than making somebody pick the right window, every open S4 tab is
+ * probed and the one carrying the real form wins.
+ */
+/**
+ * Addresses the editor is likely to live at, built rather than scraped.
+ *
+ * S4 opens the editor from javascript that assembles the url out of pieces, so
+ * there is no whole address in the markup to find. The shape is known though —
+ * index.php?action=view_shift&sdate=…&edate=…&t=…&edit_co_shift=N — and the
+ * plan carries both the month and the team, so it can simply be written out.
+ */
+function constructedCandidates(plan, origin) {
+  if (!plan || !plan.month) return [];
+  const [year, month] = plan.month.split("-").map(Number);
+  if (!year || !month) return [];
+  const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  const first = `${plan.month}-01`;
+  const last = `${plan.month}-${String(lastDay).padStart(2, "0")}`;
+  const team = plan.team_id;
+  const urls = [];
+  const add = (query) => urls.push(`${origin}/index.php?${query}`);
+  if (team !== undefined && team !== null) {
+    add(`action=view_shift&sdate=${first}&edate=${last}&t=${team}&edit_co_shift=N`);
+    add(`action=view_shift&sdate=${first}&edate=${last}&t=${team}&edit_co_shift=Y`);
+  }
+  add(`action=view_shift&sdate=${first}&edate=${last}&edit_co_shift=N`);
+  return urls;
 }
 
 function payloadsFrom(plan) {
@@ -213,6 +312,12 @@ function payloadsFrom(plan) {
 async function runPlan(dryRun) {
   await ready;
   if (state.run.running) throw new Error("A run is already going.");
+  // The probe reads a dozen pages and takes a while. Starting a run in the
+  // middle of it ran the whole month against no mapping at all.
+  if (state.probing) {
+    note("error", "Refused to run: still looking for the shift form");
+    throw new Error("Still looking for the shift form — wait for that to finish.");
+  }
   if (!state.plan) {
     note("error", "Refused to run: no plan loaded");
     throw new Error("Load a plan first.");
@@ -275,6 +380,14 @@ async function runPlan(dryRun) {
 
   const action = mapping.action || "";
   let failures = 0;
+  // Worth saying once, rather than on all five hundred rows.
+  const unmapped = !state.mapping;
+  if (dryRun && unmapped) {
+    note("warn", "Dry run has no field mapping — showing the plan only", {
+      blocks: payloads.length,
+      next: "Find the shift form, then dry run again",
+    });
+  }
 
   // Anything thrown in here used to leave running stuck on, which greys out
   // every button with no way back except clearing the results.
@@ -295,11 +408,10 @@ async function runPlan(dryRun) {
     const body = S4Mapping.buildBody(payload, mapping);
     let result;
     if (dryRun) {
-      const unmapped = Object.keys(body).length === 0;
       result = {
         ok: !unmapped,
         detail: unmapped
-          ? "dry run — no field mapping yet, so nothing could be built"
+          ? "no field mapping yet, so nothing could be built"
           : "dry run — nothing sent",
         body,
       };
@@ -326,7 +438,7 @@ async function runPlan(dryRun) {
       body: result.body,
     });
     state.run.index = i + 1;
-    if (!result.ok) {
+    if (!result.ok && !(dryRun && unmapped)) {
       note("error", `Refused: ${payload.tech_id} ${payload.start_date}→${payload.end_date}`, {
         shift: payload.shift_time,
         detail: result.detail,
@@ -407,131 +519,209 @@ const handlers = {
   async probe() {
     await ready;
     if (!state.plan) throw new Error("Load a plan first — the labels in it drive the matching.");
+    if (state.probing) throw new Error("Already looking — give it a moment.");
+    state.probing = true;
+    await save();
     note("info", "Looking for the shift form");
 
-    const tabs = await s4Tabs();
-    const looked = [];
-    let best = null;
-    let host = null;
-    let candidates = [];
+    try {
+      const plan = state.plan;
+      const tabs = await s4Tabs();
+      const looked = [];
+      const pages = [];
+      let host = null;
+      let candidates = [];
 
-    for (const tab of tabs) {
-      let reply;
-      try {
-        reply = await askTab(tab.id, { type: "probe" });
-      } catch (error) {
-        looked.push({ url: tab.url, note: "could not be read — reload it" });
-        note("warn", "Could not read an open S4 tab", { url: tab.url, error: error.message });
-        continue;
-      }
-      const score = scoreForms(reply.forms, state.plan);
-      looked.push({ url: tab.url, score });
-      note("info", "Read an open S4 tab", {
-        url: tab.url,
-        score,
-        forms: reply.forms.length,
-        candidates: (reply.candidates || []).length,
-      });
-      if (!best || score > best.score) best = { score, forms: reply.forms, tab, url: tab.url };
-      if (!host || score > 0) host = tab;
-      if (reply.candidates && reply.candidates.length) {
-        candidates = candidates.concat(reply.candidates);
-      }
-    }
+      const consider = (url, forms, fetched) => {
+        const read = readPage(forms, plan);
+        looked.push({
+          url,
+          fetched: !!fetched,
+          requiredFields: read.requiredFields,
+          shiftTimes: read.shiftTimes,
+          categories: read.categories,
+          staff: read.staff,
+        });
+        pages.push({ url, read, forms });
+        note("info", fetched ? "Read a linked S4 page" : "Read an open S4 tab", {
+          url,
+          requiredFields: `${read.requiredFields}/${REQUIRED_FIELDS.length}`,
+          shiftTimes: read.shiftTimes,
+          categories: read.categories,
+          staff: read.staff,
+        });
+        return read;
+      };
 
-    // The month grid holds an empty <form name="shift"> and opens the editor in
-    // its own window, so what is on screen is usually not what we need. Read
-    // the pages the grid links to, and anything the person named by hand.
-    const manual = (state.settings.editUrl || "").trim();
-    const origin = host ? new URL(host.url).origin : "https://s4.inhouse.net";
-    const built = constructedCandidates(state.plan, origin);
-    const seen = new Set();
-    // Pasted address first, then the ones we can write from the plan, then
-    // whatever the page actually linked to.
-    const toRead = [].concat(manual ? [manual] : [], built, candidates).filter((url) => {
-      if (!url || seen.has(url)) return false;
-      seen.add(url);
-      return true;
-    });
-    if (host && toRead.length && (!best || !isComplete(best.forms, state.plan))) {
-      for (const url of toRead.slice(0, 12)) {
+      for (const tab of tabs) {
         let reply;
         try {
-          reply = await askTab(host.id, { type: "probeUrl", url });
+          reply = await askTab(tab.id, { type: "probe" });
         } catch (error) {
-          looked.push({ url, note: "could not be fetched" });
+          looked.push({ url: tab.url, note: "could not be read — reload it" });
+          note("warn", "Could not read an open S4 tab", { url: tab.url, error: error.message });
           continue;
         }
-        if (!reply.ok) {
-          looked.push({ url, note: reply.detail || `HTTP ${reply.status}` });
-          note("warn", "Could not fetch a linked page", {
-            url,
-            detail: reply.detail || `HTTP ${reply.status}`,
-          });
-          continue;
+        consider(tab.url, reply.forms, false);
+        if (!host) host = tab;
+        if (reply.candidates && reply.candidates.length) {
+          candidates = candidates.concat(reply.candidates);
         }
-        const score = scoreForms(reply.forms, state.plan);
-        looked.push({ url, score, fetched: true });
-        note("info", "Fetched a linked S4 page", { url, score, forms: reply.forms.length });
-        if (!best || score > best.score) {
-          best = { score, forms: reply.forms, tab: host, url };
-        }
-        if (isComplete(reply.forms, state.plan)) break;
       }
-    }
-    if (!best) {
-      throw new Error(
-        "None of the open S4 tabs could be read. Reload the S4 page so the extension " +
-          "loads into it, then try again."
-      );
-    }
-    if (best.score === 0) {
-      throw new Error(
-        `Looked at ${looked.length} S4 page(s) and found no shift form. Open the shift ` +
-          "edit window — the one with Category, Shift Time and Duration on it — or paste " +
-          "its address into “editor page” below, then try again."
-      );
-    }
 
-    const { forms, tab } = best;
-    const matched = S4Mapping.matchOptions(forms, state.plan);
-    const formName = state.plan.form_name || "shift";
-    const fields = Object.assign(S4Mapping.suggestFields(forms, formName), matched.fields);
-    const target = forms.find((f) => f.name === formName) || forms[0];
-    state.mapping = {
-      fields,
-      shiftTimeValues: matched.shiftTimeValues,
-      categoryValues: matched.categoryValues,
-      staffValues: matched.staffValues,
-      unmatched: matched.unmatched,
-      constantFields: state.mapping ? state.mapping.constantFields || {} : {},
-      action: target ? target.action : "",
-      probedAt: new Date().toISOString(),
-      forPlanMonth: state.plan.month,
-      tabId: tab.id,
-      tabUrl: best.url || tab.url,
-      looked,
-      forms,
-    };
-    const shortfall = S4Mapping.missingMapping(state.mapping, state.plan);
-    note(
-      shortfall.fields.length || shortfall.slots.length || shortfall.categories.length
-        ? "warn"
-        : "ok",
-      "Mapping built",
-      {
-        from: best.url || tab.url,
-        fields: Object.keys(fields).length,
-        shiftTimes: Object.keys(matched.shiftTimeValues).length,
-        categories: Object.keys(matched.categoryValues).length,
-        staff: Object.keys(matched.staffValues).length,
+      const manual = (state.settings.editUrl || "").trim();
+      const origin = host ? new URL(host.url).origin : "https://s4.inhouse.net";
+      const built = constructedCandidates(plan, origin);
+      const seen = new Set(pages.map((entry) => entry.url));
+      const toRead = [].concat(manual ? [manual] : [], built, candidates).filter((url) => {
+        if (!url || seen.has(url)) return false;
+        seen.add(url);
+        return true;
+      });
+
+      if (host) {
+        for (const url of toRead.slice(0, 14)) {
+          let reply;
+          try {
+            reply = await askTab(host.id, { type: "probeUrl", url });
+          } catch (error) {
+            looked.push({ url, note: "could not be fetched" });
+            continue;
+          }
+          if (!reply.ok) {
+            looked.push({ url, note: reply.detail || `HTTP ${reply.status}` });
+            note("warn", "Could not fetch a linked page", {
+              url,
+              detail: reply.detail || `HTTP ${reply.status}`,
+            });
+            continue;
+          }
+          const read = consider(url, reply.forms, true);
+          if (isComplete(read)) break;
+        }
+      }
+
+      if (!pages.length) {
+        throw new Error(
+          "None of the open S4 tabs could be read. Reload the S4 page so the extension " +
+            "loads into it, then try again."
+        );
+      }
+
+      const anything = pages.some(
+        (entry) =>
+          entry.read.requiredFields ||
+          entry.read.shiftTimes ||
+          entry.read.categories ||
+          entry.read.staff
+      );
+      if (!anything) {
+        throw new Error(
+          `Looked at ${pages.length} S4 page(s) and found no shift form. Open the shift ` +
+            "edit window — the one with Category, Shift Time and Duration on it — or paste " +
+            "its address into the editor page box, then try again."
+        );
+      }
+
+      // Pick the page that supplies the most of what a post needs — that is the
+      // form we submit to, and where the field names come from.
+      let chosen = null;
+      pages.forEach((entry) => {
+        const candidate = Object.assign({}, entry.read, { url: entry.url, forms: entry.forms });
+        chosen = betterPage(chosen, candidate);
+      });
+
+      // The option values — staff ids, shift-time ids, category codes — are
+      // S4's own database ids and mean the same thing on every page, so they
+      // are taken from wherever they turned up. S4 spreads them about: the
+      // shift times live on the timings page, the staff list on another.
+      const shiftTimeValues = {};
+      const categoryValues = {};
+      const staffValues = {};
+      const contributed = {};
+      pages.forEach((entry) => {
+        const from = entry.url;
+        const add = (target, source, label) => {
+          Object.entries(source).forEach(([key, value]) => {
+            if (target[key] === undefined) {
+              target[key] = value;
+              contributed[label] = contributed[label] || {};
+              contributed[label][from] = (contributed[label][from] || 0) + 1;
+            }
+          });
+        };
+        add(shiftTimeValues, entry.read.matched.shiftTimeValues, "shiftTimes");
+        add(categoryValues, entry.read.matched.categoryValues, "categories");
+        add(staffValues, entry.read.matched.staffValues, "staff");
+      });
+
+      // Field names come from the page we post to, but fall back to another
+      // page's name for anything it does not carry — a dropdown that only
+      // appears on the timings page still has to be named in the body.
+      const fields = Object.assign({}, chosen.fields);
+      const borrowed = {};
+      pages.forEach((entry) => {
+        if (entry.url === chosen.url) return;
+        REQUIRED_FIELDS.concat(["reason", "log"]).forEach((name) => {
+          if (!fields[name] && entry.read.fields[name]) {
+            fields[name] = entry.read.fields[name];
+            borrowed[name] = entry.url;
+          }
+        });
+      });
+
+      const target =
+        (chosen.forms || []).find((f) => f.name === (plan.form_name || "shift")) ||
+        (chosen.forms || [])[0];
+
+      state.mapping = {
+        fields,
+        borrowedFields: borrowed,
+        shiftTimeValues,
+        categoryValues,
+        staffValues,
+        unmatched: chosen.matched.unmatched,
+        constantFields: state.mapping ? state.mapping.constantFields || {} : {},
+        action: target ? target.action : "",
+        probedAt: new Date().toISOString(),
+        forPlanMonth: plan.month,
+        tabId: host ? host.id : null,
+        tabUrl: chosen.url,
+        looked,
+        contributed,
+        forms: chosen.forms,
+        // Every page, so a mismatch can be read rather than guessed at.
+        pages: pages.map((entry) => ({
+          url: entry.url,
+          requiredFields: entry.read.requiredFields,
+          shiftTimes: entry.read.shiftTimes,
+          categories: entry.read.categories,
+          staff: entry.read.staff,
+          fields: entry.read.fields,
+          forms: summariseForms(entry.forms),
+        })),
+      };
+
+      const shortfall = S4Mapping.missingMapping(state.mapping, plan);
+      const incomplete =
+        shortfall.fields.length || shortfall.slots.length || shortfall.categories.length;
+      note(incomplete ? "warn" : "ok", "Mapping built", {
+        postingTo: chosen.url,
+        requiredFields: `${chosen.requiredFields}/${REQUIRED_FIELDS.length}`,
+        shiftTimes: Object.keys(shiftTimeValues).length,
+        categories: Object.keys(categoryValues).length,
+        staff: Object.keys(staffValues).length,
+        pagesRead: pages.length,
+        borrowedFields: Object.keys(borrowed),
         missingFields: shortfall.fields,
         missingShiftTimes: shortfall.slots,
         missingCategories: shortfall.categories,
-      }
-    );
-    await save();
-    return state;
+      });
+      return state;
+    } finally {
+      state.probing = false;
+      await save();
+    }
   },
 
   async startRun({ dryRun }) {
@@ -597,18 +787,12 @@ const handlers = {
         staffCount: Object.keys(mapping.staffValues || {}).length,
         unmatched: mapping.unmatched,
         looked: mapping.looked,
-        // The raw field names of every form seen, which is what a mismatch
-        // always comes down to.
-        forms: (mapping.forms || []).map((form) => ({
-          name: form.name,
-          action: form.action,
-          loose: !!form.loose,
-          inputs: (form.inputs || []).map((i) => `${i.name}:${i.type}`),
-          selects: (form.selects || []).map((sel) => ({
-            name: sel.name,
-            options: (sel.options || []).slice(0, 25).map((o) => `${o.value}=${o.text}`),
-          })),
-        })),
+        contributed: mapping.contributed,
+        borrowedFields: mapping.borrowedFields,
+        // Every page read, with the raw field names and dropdown options of
+        // each. A mismatch always comes down to these, and S4 spreads the
+        // pieces over several pages, so one page's worth is not enough.
+        pages: mapping.pages,
       },
       missing: plan && mapping ? S4Mapping.missingMapping(mapping, plan) : null,
       settings: state.settings,

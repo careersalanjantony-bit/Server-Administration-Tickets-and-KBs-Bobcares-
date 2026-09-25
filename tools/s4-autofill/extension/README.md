@@ -84,10 +84,23 @@ a complete mapping:
 4. Failing all of that, reads whatever address you paste under *"the editor is
    on another page"*, which is tried first when set.
 
-Watch out for a page that matches the shift times and nothing else:
-`action=edit_timings` is S4's list of shift timings, so it maps all the slots
-while having no staff, no category and no dates. That is not the editor, and a
-live run is refused on it.
+### S4 spreads the form over several pages
+
+There is no single page with everything on it. In practice:
+`action=edit_timings` carries the shift-time dropdown and nothing else;
+`action=add_shift` and `action=manage_shift` carry the staff list; the month
+grid carries only the From/To dates.
+
+So the probe reads every page it can reach and **merges** them. The page that
+supplies the most of the fields a post needs is the one it posts to, and the
+option values — staff ids, shift-time ids, category codes — are taken from
+wherever they turned up, because those are S4's own database ids and mean the
+same thing everywhere. A field name missing from the posting page is borrowed
+from another. The log says which page gave what.
+
+Picking a single best page did not work: scoring by how many things matched
+chose the timings page, which matched fourteen shift times and could not post
+anything, over `add_shift`, which had the staff list and the fields.
 
 It reports which page it settled on, and lists anything it could not match
 rather than guessing.
@@ -191,7 +204,7 @@ It writes to a live roster, so:
 node --test
 ```
 
-76 tests. They load the real `background.js` and `content/s4page.js` into a VM
+84 tests. They load the real `background.js` and `content/s4page.js` into a VM
 with a stand-in `browser` API and a form shaped like S4's, and cover the things
 that would actually corrupt a roster: that duration fields are never mistaken
 for the clock fields, that midnight and noon do not post as hour zero, that a
