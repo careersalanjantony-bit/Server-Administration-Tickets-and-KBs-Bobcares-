@@ -37,6 +37,53 @@
     $('bankCount').textContent = (await B.load(api)).length;
   }
 
+  const ago = (t) => {
+    const s = Math.round((Date.now() - t) / 1000);
+    return s < 60 ? 'just now' : s < 3600 ? Math.round(s / 60) + ' min ago' : new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  };
+
+  let isTemporary = false;
+  async function renderCloud() {
+    let info = null;
+    try {
+      info = await api.runtime.sendMessage({ type: 'syncInfo' });
+    } catch (e) {
+      /* background not reachable */
+    }
+    const el = $('cloud');
+    const on = !!(info && info.url && info.hasKey);
+    const st = info && info.status;
+    $('syncBtn').hidden = !on;
+    if (!on) {
+      el.textContent = 'Cloud sync: off (set it up in the bank)';
+      el.className = 'cloud';
+    } else if (st && st.state === 'error') {
+      el.textContent = 'Cloud sync problem: ' + st.message;
+      el.className = 'cloud error';
+    } else {
+      el.textContent =
+        'Cloud sync on' + (st && st.state === 'ok' ? ', synced ' + ago(st.at) : '') + (info.pending ? ' · ' + info.pending + ' change(s) to upload' : '');
+      el.className = 'cloud ok';
+    }
+    // Temporary installs lose their storage (and connection settings) on restart.
+    const warn = $('tempWarn');
+    warn.hidden = !isTemporary || (on && info.builtIn);
+    warn.textContent = on
+      ? 'Loaded temporarily: your questions are safe in the cloud, but Firefox forgets the connection when it restarts. Put the address and key in config.js to connect automatically.'
+      : 'Loaded temporarily: Firefox deletes the saved questions when it restarts. Turn on cloud sync (Open bank → Cloud sync) or export a backup.';
+  }
+
+  async function syncNow() {
+    $('cloud').textContent = 'Syncing with the cloud…';
+    try {
+      await api.runtime.sendMessage({ type: 'sync' });
+    } catch (e) {
+      /* shown by renderCloud */
+    }
+    await renderBankCount();
+    await renderCloud();
+  }
+
   function renderState(running) {
     $('state').textContent = running ? 'Running' : 'Idle';
     $('state').className = 'badge' + (running ? ' run' : '');
@@ -86,11 +133,12 @@
     await renderBankCount();
 
     try {
-      const self = await api.management.getSelf();
-      $('tempWarn').hidden = self.installType !== 'development';
+      isTemporary = (await api.management.getSelf()).installType === 'development';
     } catch (e) {
       /* management API not available - skip the warning */
     }
+    await renderCloud();
+    syncNow(); // get the latest questions from the cloud
 
     // Keep what's typed even if the popup closes.
     let t;
@@ -111,6 +159,7 @@
     });
 
     $('save').addEventListener('click', () => saveBox(false));
+    $('syncBtn').addEventListener('click', syncNow);
     $('clearBox').addEventListener('click', async () => {
       $('key').value = '';
       renderPreview();
@@ -161,6 +210,7 @@
       if (area !== 'local') return;
       if (changes.running) renderState(!!changes.running.newValue);
       if (changes.bank) renderBankCount();
+      if (changes.syncStatus || changes.pendingOps) renderCloud();
     });
   }
 

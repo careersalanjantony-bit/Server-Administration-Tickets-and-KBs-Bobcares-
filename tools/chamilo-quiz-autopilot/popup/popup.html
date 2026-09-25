@@ -12,19 +12,29 @@
     </header>
 
     <div class="bankbar">
-      <span><b id="bankCount">0</b> questions saved in your question bank</span>
-      <button id="openBank">Open bank</button>
+      <div>
+        <div><b id="bankCount">0</b> questions in your question bank</div>
+        <div id="cloud" class="cloud">Cloud sync: off</div>
+      </div>
+      <div class="bankbtns">
+        <button id="syncBtn" hidden>Sync now</button>
+        <button id="openBank">Open bank</button>
+      </div>
     </div>
-    <p id="tempWarn" class="note warn" hidden>
-      Loaded temporarily: Firefox deletes the saved questions when it restarts. Export a backup from the question bank, or see
-      the README to keep them.
+    <p id="tempWarn" class="note warn" hidden></p>
+
+    <label for="key" class="label">Add or update questions <span class="hint">(saved automatically)</span></label>
+    <textarea id="key" spellcheck="false" aria-describedby="keyHelp" placeholder="Which plan provides assistance with AnyDesk?
+Dedicated Engineer Session or PLSM
+
+How many websites can be monitored in LSM plan
+3"></textarea>
+    <p id="keyHelp" class="helpbox">
+      Paste the <b>full question</b>, followed by its <b>correct answer only</b> (not the other options). Put the answer on the
+      next line, or after <b>Answer:</b>, and leave a blank line between questions. Lists (bullets or 1., 2., 3.) work for
+      multi-part and ordering answers. Numbered lists, tables and <b>Q:</b>/<b>A:</b> also work. A question you already have gets
+      its answer updated.
     </p>
-
-    <label for="key" class="label">Add or update questions <span class="hint">(paste in any format, saved automatically)</span></label>
-    <textarea id="key" spellcheck="false" placeholder="1. Which plan provides assistance with AnyDesk?
-Answer: Dedicated Engineer Session or PLSM
-
-New questions are added. If a question is already saved, its answer is updated."></textarea>
 
     <div class="row">
       <button id="save" class="primary">Save to bank</button>

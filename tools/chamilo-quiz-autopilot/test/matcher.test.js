@@ -275,6 +275,44 @@ test('real quiz page: "Choose ALL correct statements about using AI" picks "All 
   assert.equal(r.confidence, 'high');
 });
 
+test('plain "full question, then correct answer only" blocks', () => {
+  const e = M.parseKey(
+    [
+      'Which plan provides assistance with AnyDesk',
+      'Dedicated Engineer Session or PLSM',
+      '',
+      'What is the correct two-step process to follow during migrations?',
+      'Perform migration without DNS change and test.',
+      'Do a final data resync, update DNS, and test again.',
+      '',
+      'Match following tasks in order of priority',
+      '1. Priority Chats',
+      '2. Priority Tickets',
+      'How many websites can be monitored in LSM plan',
+      '3',
+      '',
+      'Which of the following are required steps in a server migration? (Select all that apply)',
+      '- Perform the initial migration',
+      '- Verify websites using the hosts file',
+      '',
+      '```text',
+      '1  - Dedicated Engineer Session or PLSM',
+      '2  - Call or chat to get OTP',
+      '```',
+    ].join('\n')
+  );
+  assert.deepEqual(
+    e.map((x) => [x.q, x.a]),
+    [
+      ['Which plan provides assistance with AnyDesk', 'Dedicated Engineer Session or PLSM'],
+      ['What is the correct two-step process to follow during migrations?', 'Perform migration without DNS change and test.\nDo a final data resync, update DNS, and test again.'],
+      ['Match following tasks in order of priority', '1. Priority Chats\n2. Priority Tickets'],
+      ['How many websites can be monitored in LSM plan', '3'],
+      ['Which of the following are required steps in a server migration? (Select all that apply)', 'Perform the initial migration\nVerify websites using the hosts file'],
+    ]
+  );
+});
+
 test('pauses when a second key entry for the question accepts two options', () => {
   const key = M.parseKey(
     [

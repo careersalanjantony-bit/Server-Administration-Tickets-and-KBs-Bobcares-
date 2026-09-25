@@ -16,10 +16,37 @@
         <input id="search" type="search" placeholder="Search questions and answers" aria-label="Search questions and answers" />
       </header>
 
-      <p id="tempWarn" class="banner" hidden>
-        This add-on is loaded temporarily, so Firefox <b>deletes these questions when it restarts</b>. Click
-        <b>Export backup</b> to keep a copy you can import again, or install the add-on permanently (see the README).
-      </p>
+      <p id="tempWarn" class="banner" hidden></p>
+
+      <section id="syncPanel" class="panel sync" aria-labelledby="syncTitle">
+        <div class="sync-head">
+          <h2 id="syncTitle">Cloud sync</h2>
+          <span id="syncState" class="pill">Off</span>
+          <span class="spacer"></span>
+          <button id="syncNow" hidden>Sync now</button>
+        </div>
+        <p id="syncMsg" class="hint">
+          Keep this question bank on your own Vercel server, so every computer with the add-on uses the same questions and answers.
+        </p>
+        <form id="syncForm" class="sync-form" autocomplete="off">
+          <div>
+            <label for="syncUrl">Server address</label>
+            <input id="syncUrl" type="url" placeholder="https://your-project.vercel.app" spellcheck="false" />
+          </div>
+          <div>
+            <label for="syncKey">Access key</label>
+            <input id="syncKey" type="password" placeholder="The BANK_TOKEN you set in Vercel" spellcheck="false" />
+          </div>
+          <div class="row">
+            <button type="submit" class="primary" id="connectBtn">Connect</button>
+            <button type="button" id="disconnectBtn" hidden>Disconnect</button>
+          </div>
+        </form>
+        <p class="hint small">
+          Set up the server first: deploy the add-on's <code>server</code> folder to Vercel and add Upstash Redis (see the README).
+          Connecting uploads the questions saved on this computer and downloads everything already in the cloud.
+        </p>
+      </section>
 
       <div class="toolbar">
         <button id="addBtn" class="primary">Add question</button>
@@ -36,7 +63,7 @@
         <h2>Add a question</h2>
         <label for="newQ">Question</label>
         <textarea id="newQ" rows="2"></textarea>
-        <label for="newA">Answer <span class="hint">(one line per statement; a numbered list for ordering questions)</span></label>
+        <label for="newA">Correct answer only <span class="hint">(not the other options; one line per statement, a numbered list for ordering questions)</span></label>
         <textarea id="newA" rows="4"></textarea>
         <div class="row">
           <button id="addSave" class="primary">Save</button>
@@ -47,8 +74,9 @@
       <section id="importPanel" class="panel" hidden>
         <h2>Import</h2>
         <p class="hint">
-          Paste questions and answers in any format, or choose a backup file (.json) or text file. New questions are added,
-          and questions you already have get their answer updated.
+          Paste the <b>full question</b>, followed by its <b>correct answer only</b> (on the next line or after "Answer:"), with a
+          blank line between questions. Numbered lists, tables and Q:/A: also work, or choose a backup file (.json) or a text file.
+          New questions are added, and questions you already have get their answer updated.
         </p>
         <textarea id="importText" rows="8" spellcheck="false" aria-label="Questions and answers to import"></textarea>
         <div class="row">

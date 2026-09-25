@@ -508,6 +508,7 @@
   const LETTER = /^\(?([a-h])\s*[.)]\s+(.+)$/i; // "a) option", "B. option"
   const QMARK = /^(?:q|ques|question)\s*(\d{1,3})?\s*[:.)\-]\s*(.+)$/i; // "Q: ..", "Q12. ..", "Question 12: .."
   const AMARK = /^(?:(?:ans(?:wer)?s?|correct(?:\s+(?:answer|option|choice))?|right\s+answer|solution)\s*[:=\-\u2013\u2014]|a\s*[:=])\s*(.*)$/i;
+  const NUM_DASH = /^\d{1,3}\s*[-\u2013\u2014]\s+/; // "1 - answer" lists (answers without their questions)
   const ANSWER_HEADING = /^(?:answers?|ans|correct\s+answer|right\s+answer|solution)\s*:?$/i; // "### Answer"
   const QNUM_ONLY = /^(?:(?:q|ques|question)\s*#?\s*(\d{1,3})\s*[.):]?|#?(\d{1,3})\s*[.):])$/i; // "Question 5", "Q5", "5."
   const QUESTION_WORD = /^(what|which|how|why|when|where|who|whom|select|choose|match|according|if|you|is|are|do|does|can|should|in|for)\b/i;
@@ -619,10 +620,24 @@
       return false;
     };
 
-    let cur = null; // { q, qx:[], a:[], num, loose, answering, lastItem, optItem }
+    let cur = null; // { q, qx:[], a:[], list:[], num, loose, marked, answering, lastItem, optItem }
     const finish = () => {
+      // "Question" followed straight by a bullet / numbered list and no "Answer:"
+      // label: the list is the correct answer (e.g. the priority order).
+      if (cur && !cur.a.length && cur.list.length && !cur.marked) {
+        cur.a = cur.list.slice();
+        cur.qx = [];
+      }
       if (cur && cur.a.length) push(cur.q, cur.a, cur.qx);
       cur = null;
+    };
+    // Is the very next line (no blank line in between) the start of an answer?
+    const answerRightBelow = (from) => {
+      const p = plainOf(lines[from + 1] || '');
+      if (!p || /^```/.test(p) || isHeadingLike(p) || headingInner(p) != null || QMARK.test(p) || QNUM_ONLY.test(p) || NUM_DASH.test(p)) return false;
+      if (p.startsWith('|') || /^([-*_])\1{2,}$/.test(p)) return false;
+      const n = p.match(NUM);
+      return !n || +n[1] === 1;
     };
     const startQ = (qText, num, loose) => {
       finish();
@@ -631,7 +646,7 @@
       if (ia) return push(ia[1], [ia[2]]);
       const pair = pairOf(qText, false);
       if (pair) return push(pair[0], [pair[1]]);
-      cur = { q: qText, qx: [], a: [], num, loose, answering: false, lastItem: null, optItem: null };
+      cur = { q: qText, qx: [], a: [], list: [], num, loose, marked: false, answering: false, lastItem: null, optItem: null };
     };
     const addAnswer = (s) => {
       const m = s.match(NUM);
@@ -649,7 +664,12 @@
 
     for (let li = 0; li < lines.length; li++) {
       const line = lines[li];
-      if (!line || /^```/.test(line)) continue;
+      if (!line) {
+        // A blank line ends a "question, then its answer" block.
+        if (cur && cur.loose && (cur.a.length || cur.list.length)) finish();
+        continue;
+      }
+      if (/^```/.test(line)) continue;
       if (/^([-*_])\1{2,}$/.test(line)) {
         finish();
         continue;
@@ -665,6 +685,7 @@
       if (fromHeading) {
         if (cur && ANSWER_HEADING.test(inner)) {
           cur.answering = true;
+          cur.marked = true;
           continue;
         }
         const marked = NUM.test(inner) || QMARK.test(inner) || QNUM_ONLY.test(inner) || AMARK.test(inner);
@@ -691,6 +712,7 @@
 
       if (cur && (m = plain.match(AMARK))) {
         cur.answering = true;
+        cur.marked = true;
         const rest = m[1].replace(MARKS, '').trim();
         if (rest) addAnswer(rest);
         continue;
@@ -719,7 +741,10 @@
             // A numbered option list under the question; "check-mark" marks the answer.
             cur.optItem = n;
             if (MARKS.test(m[2]) || TRAILING_MARK.test(m[2])) cur.a.push(m[2]);
-            else cur.qx.push(m[2]);
+            else {
+              cur.qx.push(m[2]);
+              cur.list.push(plain);
+            }
             continue;
           }
         }
@@ -738,7 +763,10 @@
         const body = plain.replace(BULLET, '');
         if (cur && cur.answering) addAnswer(body);
         else if (cur && (MARKS.test(body) || TRAILING_MARK.test(body))) cur.a.push(body); // "- \u2705 option"
-        else if (cur) cur.qx.push(body);
+        else if (cur) {
+          cur.qx.push(body);
+          cur.list.push(body);
+        }
         continue;
       }
 
@@ -757,13 +785,12 @@
           if (/\?$/.test(plain)) startQ(plain, null, true);
           continue;
         }
-        if (cur.loose && cur.a.length) {
-          finish();
-          continue;
-        }
         addAnswer(plain);
         continue;
       }
+
+      // A plain line after a question's answer list starts the next question.
+      if (cur && cur.list.length && !cur.a.length && !cur.marked && !answerMarkerAhead(li)) finish();
 
       if (cur) {
         if (!cur.q) {
@@ -785,15 +812,16 @@
           startQ(plain, null, true);
           continue;
         }
-        // No "Answer:" marker coming: this line is the answer.
+        // No "Answer:" marker coming: this line (and the ones right after it) is the answer.
         cur.answering = true;
         addAnswer(plain);
-        if (cur.loose) finish();
         continue;
       }
 
       if (/\?$/.test(plain)) startQ(plain, null, true);
       else if (answerMarkerAhead(li) && !isHeadingLike(plain)) startQ(plain, null, false);
+      // "Full question" on one line, its correct answer right below it.
+      else if (!isHeadingLike(plain) && !/:$/.test(plain) && !NUM_DASH.test(plain) && answerRightBelow(li)) startQ(plain, null, true);
       // Anything else outside a question (intro text, headings) is ignored.
     }
     finish();

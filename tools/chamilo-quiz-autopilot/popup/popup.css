@@ -214,3 +214,36 @@ button.link {
   text-decoration: underline;
   cursor: pointer;
 }
+
+.cloud {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.cloud.ok {
+  color: var(--ok-fg);
+}
+
+.cloud.error {
+  color: var(--warn);
+}
+
+.bankbtns {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.helpbox {
+  margin: 6px 0 0;
+  padding: 6px 8px;
+  border-left: 3px solid var(--primary);
+  background: var(--field);
+  border-radius: 0 6px 6px 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.helpbox b {
+  color: var(--fg);
+}

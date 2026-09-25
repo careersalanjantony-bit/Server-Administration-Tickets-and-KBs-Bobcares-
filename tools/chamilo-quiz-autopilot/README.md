@@ -49,15 +49,61 @@ Everything you paste is kept in the add-on's own storage, so you don't paste it 
 
 A **temporarily loaded** add-on (about:debugging) is removed when Firefox closes, and Firefox deletes its stored data with it. The popup and the question bank page warn you when that's the case. To keep your questions:
 
-- **Export a backup** before closing Firefox. After loading the add-on again, use **Import…** on the question bank page and choose that file. Nothing is lost, and each question keeps its original date.
+- **Turn on cloud sync** (below). The questions live on your Vercel server and come back automatically. Put the address and key in `config.js` so the add-on also reconnects on its own after a restart.
+- Or **export a backup** before closing Firefox, then use **Import…** on the question bank page after loading the add-on again.
 - Or **install the add-on permanently** (see *To keep it installed* above). A permanently installed add-on keeps its data across restarts.
-- Advanced (not tested here): setting `extensions.webextensions.keepStorageOnUninstall` and `extensions.webextensions.keepUuidOnUninstall` to `true` in `about:config` should also keep the data of a temporary add-on. This applies to every add-on you remove.
+
+## Cloud sync with Vercel (same questions on every computer)
+
+The `server/` folder is a small Vercel project that stores the question bank in **Upstash Redis** (Vercel's one-click Redis database, free plan). Once it's connected:
+
+- Every question you add, edit or delete is uploaded straight away. If the server can't be reached, the change waits and is uploaded on the next sync.
+- On every quiz question the add-on first downloads the latest questions (waiting at most 4 seconds), then answers from the full cloud bank. If the server is offline it answers from the last downloaded copy.
+- A computer that has never seen your questions gets all of them the first time it connects.
+- If two computers change the same question, the newer answer wins.
+
+### 1. Deploy the server (once)
+
+1. Make sure this code is on GitHub (merge the pull request, or pick this branch when importing).
+2. Go to [vercel.com/new](https://vercel.com/new), import this repository and set **Root Directory** to `tools/chamilo-quiz-autopilot/server` (framework preset *Other*, no build settings needed). Click **Deploy**.
+3. In the new project open **Storage** → **Create Database** (or *Connect Store*) → **Upstash** → *Redis* → free plan → connect it to this project. Vercel adds the database settings (`KV_REST_API_URL`, `KV_REST_API_TOKEN`) for you.
+4. Open **Settings → Environment Variables** and add `BANK_TOKEN` with a long random password of your choice. This is the **access key** the add-on uses.
+5. Open **Deployments** → ⋯ → **Redeploy** so the new settings take effect.
+6. Open `https://<your-project>.vercel.app`. The status page should show green checks for the server, the access key and the database.
+
+Using the command line instead: `cd tools/chamilo-quiz-autopilot/server && npx vercel`. Then add the Upstash store in the dashboard, run `npx vercel env add BANK_TOKEN`, and finish with `npx vercel --prod`.
+
+### 2. Connect the add-on
+
+Open the question bank (popup → **Open bank**) → **Cloud sync**. Enter the server address (`https://<your-project>.vercel.app`) and the access key, then click **Connect**. The questions already on that computer are uploaded, and everything in the cloud is downloaded. The popup then shows *"Cloud sync on, synced just now"* and has a **Sync now** button.
+
+### 3. Other computers: connect automatically
+
+Open `config.js` in your copy of the add-on and fill in:
+
+```js
+globalThis.QUIZ_AUTOPILOT_CONFIG = {
+  serverUrl: 'https://your-project.vercel.app',
+  accessKey: 'your BANK_TOKEN',
+};
+```
+
+Any computer that loads that copy connects on its own and downloads all your questions, with nothing to paste. It also reconnects after every Firefox restart. Settings entered in the Cloud sync panel override `config.js`, and **Disconnect** turns sync off on that computer.
+
+**Keep the access key private.** Anyone who has it can read and change your question bank. Don't commit a filled-in `config.js` to a public repository. To lock everyone out, change `BANK_TOKEN` in Vercel and redeploy.
 
 ## Answer-key formats
 
-Paste the key the way you have it. Formats can be mixed. Intro text, headings (for example "Additional Questions You Shared Later") and number-only "answers to memorize" lists are ignored. The count under the box tells you how many questions were recognised. Exact duplicates are counted once.
+**Paste the full question, followed by its correct answer only** (not the other options). Formats can be mixed. Intro text, headings (for example "Additional Questions You Shared Later") and number-only "answers to memorize" lists are ignored. The count under the box tells you how many questions were recognised. Exact duplicates are counted once.
 
 ```text
+Which plan provides assistance with AnyDesk             ← the full question
+Dedicated Engineer Session or PLSM                      ← its correct answer only, on the next line
+                                                        ← blank line between questions
+Match following tasks in order of priority
+1. Priority Chats                                       ← a list right below = a multi-part / ordering answer
+2. Priority Tickets
+
 1. Which plan provides assistance with AnyDesk          ← numbered question ("Q:", "Q1." and "Question 1:" work too)
 Answer: ✅ Dedicated Engineer Session or PLSM            ← "Answer:", "Ans:", "A:" or "Correct answer:"; ✅ and **bold** are ignored
 
@@ -129,10 +175,13 @@ Otherwise it pauses. The panel shows which key entry it used and the match score
 |---|---|
 | `manifest.json` | Extension manifest (Manifest V2, which Firefox fully supports). Runs only on `*/main/exercise/*` pages. |
 | `matcher.js` | Answer-key parser and fuzzy matching. Pure functions, shared by the page script, the popup and the tests. |
-| `bank.js` | The question bank: merging new questions and answers, backup export/import, undo. |
+| `bank.js` | The question bank: merging new questions and answers, backup export/import, undo, and tracking changes to upload. |
+| `background.js` | Cloud sync: uploads local changes and downloads the cloud bank (Vercel server). |
+| `config.js` | Optional built-in server address and access key, so a copy of the add-on connects on its own. |
+| `server/` | The Vercel project: `api/questions` (the shared bank), `api/health` (setup check), and a status page. Tests: `cd server && npm test`. |
 | `bank/` | The question bank page (search, edit, delete, add, import, export). |
 | `content.js` | Reads the quiz page, ticks answers, clicks Next, shows the panel and the End-test confirmation. |
 | `popup/` | Toolbar popup: add questions to the bank, start or stop, settings. |
 | `test/` | Unit tests: `node --test tools/chamilo-quiz-autopilot/test/matcher.test.js tools/chamilo-quiz-autopilot/test/bank.test.js` |
 
-The question bank is stored only in the extension's local storage (`browser.storage.local`) and never leaves your browser, except as a backup file you export yourself.
+The question bank is stored in the extension's local storage (`browser.storage.local`). It only leaves your browser if you turn on cloud sync, which sends it to **your own** Vercel server and nowhere else, or if you export a backup file yourself.

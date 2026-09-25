@@ -497,6 +497,13 @@
       return;
     }
 
+    // Fetch the latest questions from the cloud first (if sync is set up);
+    // if the server is slow or offline, answer from the saved copy.
+    try {
+      await Promise.race([api.runtime.sendMessage({ type: 'sync' }), sleep(4000)]);
+    } catch (e) {
+      /* no background page / offline - use the saved copy */
+    }
     const entries = await B.load(api);
     if (!entries.length) {
       ui.status('Your question bank is empty. Open the Quiz Autopilot toolbar popup and paste your questions and answers first.', 'error');

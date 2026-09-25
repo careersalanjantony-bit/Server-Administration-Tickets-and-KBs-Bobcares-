@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Quiz Autopilot Sync</title>
+    <style>
+      :root {
+        --bg: #f6f7f9;
+        --card: #ffffff;
+        --fg: #111827;
+        --muted: #6b7280;
+        --border: #d9dde3;
+        --ok: #15803d;
+        --bad: #b91c1c;
+        --code: #eef1f5;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #111418;
+          --card: #1c2128;
+          --fg: #e6e8eb;
+          --muted: #9aa3ad;
+          --border: #353c45;
+          --ok: #4ade80;
+          --bad: #f87171;
+          --code: #262c34;
+        }
+      }
+      * { box-sizing: border-box; }
+      body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.55 system-ui, -apple-system, 'Segoe UI', sans-serif; }
+      main { max-width: 680px; margin: 0 auto; padding: 40px 16px; }
+      h1 { margin: 0 0 4px; font-size: 24px; }
+      .sub { margin: 0 0 24px; color: var(--muted); }
+      .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 16px 18px; margin-bottom: 16px; }
+      ul.checks { list-style: none; margin: 0; padding: 0; }
+      ul.checks li { display: flex; gap: 10px; padding: 6px 0; }
+      .dot { flex: none; width: 1.3em; text-align: center; font-weight: 700; }
+      .ok { color: var(--ok); } .bad { color: var(--bad); }
+      code { background: var(--code); padding: 1px 6px; border-radius: 4px; overflow-wrap: anywhere; }
+      ol { padding-left: 20px; margin: 8px 0 0; }
+      li + li { margin-top: 4px; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Quiz Autopilot Sync</h1>
+      <p class="sub">The cloud question bank for the Chamilo Quiz Autopilot Firefox extension.</p>
+
+      <section class="card" aria-live="polite">
+        <ul class="checks" id="checks"><li>Checking this deployment…</li></ul>
+      </section>
+
+      <section class="card">
+        <b>Connect the extension</b>
+        <ol>
+          <li>Open the extension's question bank (toolbar popup → <b>Open bank</b>).</li>
+          <li>Under <b>Cloud sync</b>, enter this address: <code id="addr"></code></li>
+          <li>Enter the access key: the value of <code>BANK_TOKEN</code> you set in Vercel.</li>
+          <li>Click <b>Connect</b>. Questions already saved on that computer are uploaded, and everything in the cloud is downloaded.</li>
+        </ol>
+      </section>
+    </main>
+    <script>
+      document.getElementById('addr').textContent = location.origin;
+      const li = (ok, text) => {
+        const el = document.createElement('li');
+        const d = document.createElement('span');
+        d.className = 'dot ' + (ok ? 'ok' : 'bad');
+        d.textContent = ok ? '✓' : '✕';
+        const t = document.createElement('span');
+        t.textContent = text;
+        el.append(d, t);
+        return el;
+      };
+      fetch('/api/health')
+        .then((r) => r.json())
+        .then((h) => {
+          const ul = document.getElementById('checks');
+          ul.textContent = '';
+          ul.append(li(true, 'Server is running.'));
+          ul.append(
+            li(h.accessKey === 'set', h.accessKey === 'set' ? 'Access key (BANK_TOKEN) is set.' : 'Access key missing: add a BANK_TOKEN environment variable in Vercel, then redeploy.')
+          );
+          ul.append(
+            li(
+              h.database === 'connected',
+              h.database === 'connected'
+                ? 'Database connected.'
+                : h.database === 'missing'
+                  ? 'No database: in Vercel open Storage, add Upstash Redis to this project, then redeploy.'
+                  : 'Database problem: ' + h.database
+            )
+          );
+          if (h.ok) ul.append(li(true, 'Ready. Connect the extension below.'));
+        })
+        .catch(() => {
+          const ul = document.getElementById('checks');
+          ul.textContent = '';
+          ul.append(li(false, 'Could not reach /api/health on this deployment.'));
+        });
+    </script>
+  </body>
+</html>

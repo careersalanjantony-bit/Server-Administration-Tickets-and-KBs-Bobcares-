@@ -81,3 +81,23 @@ test('backup export can be imported again', () => {
   assert.equal(again.bank[0].source, 'manual', 'original label kept');
   assert.equal(again.bank[0].added, bank[0].added, 'original date kept');
 });
+
+test('sync bookkeeping: local changes become uploads, and unsent ones survive a download', () => {
+  const { bank } = B.merge([], [
+    { q: 'Which plan provides assistance with AnyDesk?', a: 'Dedicated Engineer Session or PLSM' },
+    { q: 'How many websites can be monitored in LSM plan', a: '3' },
+  ], 'pasted', 1000);
+  const edited = bank.map((e) => (e.q.startsWith('How many') ? Object.assign({}, e, { a: '3 websites', updated: 2000 }) : e)).slice(1);
+  const ops = B.diffOps(bank, edited);
+  assert.deepEqual(ops.map((o) => [o.op, o.key]), [
+    ['upsert', 'how many websites can be monitored in lsm plan'],
+    ['delete', 'which plan provides assistance with anydesk'],
+  ]);
+  assert.equal(ops[0].entry.a, '3 websites');
+
+  // Server still has the old data; the pending edit and delete are re-applied on top.
+  const server = bank.map(B.wireEntry);
+  const pending = Object.fromEntries(ops.map((o) => [o.key, o]));
+  const merged = B.applyOps(B.fromServer(server), pending);
+  assert.deepEqual(merged.map((e) => [e.q, e.a]), [['How many websites can be monitored in LSM plan', '3 websites']]);
+});

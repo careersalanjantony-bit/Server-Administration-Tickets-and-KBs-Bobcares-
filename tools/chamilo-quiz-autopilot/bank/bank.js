@@ -160,13 +160,84 @@
     await reload();
   }
 
+  // ---- cloud sync panel
+
+  let isTemporary = false;
+  let cloudOn = false;
+
+  const send = async (m) => {
+    try {
+      return await api.runtime.sendMessage(m);
+    } catch (e) {
+      return { state: 'error', message: 'The add-on background page is not running. Reload the add-on.' };
+    }
+  };
+
+  async function renderSync() {
+    const info = (await send({ type: 'syncInfo' })) || {};
+    const st = info.status || {};
+    cloudOn = !!(info.url && info.hasKey);
+    const pill = $('syncState');
+    pill.textContent = !cloudOn ? 'Off' : st.state === 'error' ? 'Problem' : 'Connected';
+    pill.className = 'pill' + (cloudOn ? (st.state === 'error' ? ' error' : ' ok') : '');
+    $('syncNow').hidden = !cloudOn;
+    $('disconnectBtn').hidden = !cloudOn;
+    $('connectBtn').textContent = cloudOn ? 'Save and reconnect' : 'Connect';
+    if (cloudOn && document.activeElement !== $('syncUrl')) $('syncUrl').value = info.url;
+    $('syncKey').placeholder = cloudOn ? 'Saved (type a new one to change it)' : 'The BANK_TOKEN you set in Vercel';
+    const when = st.at ? new Date(st.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+    $('syncMsg').textContent = !cloudOn
+      ? 'Keep this question bank on your own Vercel server, so every computer with the add-on uses the same questions and answers.'
+      : st.state === 'error'
+        ? 'Could not sync: ' + st.message
+        : 'Every change here is uploaded straight away, and the quiz page downloads the latest questions before answering.' +
+          (when ? ' Last synced at ' + when + '.' : '') +
+          (info.pending ? ' ' + info.pending + ' change(s) waiting to upload.' : '') +
+          (info.builtIn ? ' (Settings come from config.js.)' : '');
+
+    const warn = $('tempWarn');
+    warn.hidden = !isTemporary || (cloudOn && info.builtIn);
+    warn.textContent = cloudOn
+      ? 'This add-on is loaded temporarily: your questions are safe in the cloud, but Firefox forgets the connection when it restarts. Put the server address and access key in config.js to connect automatically.'
+      : 'This add-on is loaded temporarily, so Firefox deletes these questions when it restarts. Turn on cloud sync below, click Export backup, or install the add-on permanently (see the README).';
+  }
+
+  async function syncNow() {
+    $('syncMsg').textContent = 'Syncing with the cloud…';
+    await send({ type: 'sync' });
+    await reload();
+    await renderSync();
+  }
+
   async function init() {
     try {
-      const self = await api.management.getSelf();
-      $('tempWarn').hidden = self.installType !== 'development';
+      isTemporary = (await api.management.getSelf()).installType === 'development';
     } catch (e) {
       /* management API not available - skip the warning */
     }
+
+    $('syncForm').addEventListener('submit', async (ev) => {
+      ev.preventDefault();
+      const info = (await send({ type: 'syncInfo' })) || {};
+      const key = $('syncKey').value.trim();
+      if (!key && !(info.hasKey && cloudOn)) return msg('Enter the access key.', 'warn');
+      $('syncMsg').textContent = 'Connecting…';
+      const r = await send({ type: 'connect', url: $('syncUrl').value, key: key || undefined });
+      if (r && r.state === 'ok') {
+        $('syncKey').value = '';
+        msg('Connected to the cloud: ' + r.count + ' questions in your question bank.');
+      } else {
+        msg('Could not connect: ' + ((r && r.message) || 'unknown error'), 'warn');
+      }
+      await reload();
+      await renderSync();
+    });
+    $('disconnectBtn').addEventListener('click', async () => {
+      await send({ type: 'disconnect' });
+      msg('Cloud sync turned off. The questions stay saved on this computer.');
+      await renderSync();
+    });
+    $('syncNow').addEventListener('click', syncNow);
 
     $('search').addEventListener('input', render);
 
@@ -235,17 +306,22 @@
 
     $('clearBtn').addEventListener('click', async () => {
       if (!bank.length) return;
-      if (!window.confirm('Delete all ' + bank.length + ' saved questions? You can still use "Undo last change" right after.')) return;
+      const where = cloudOn ? ' They are deleted from the cloud too, for every computer.' : '';
+      if (!window.confirm('Delete all ' + bank.length + ' saved questions?' + where + ' You can still use "Undo last change" right after.')) return;
       await B.save(api, []);
       msg('All questions deleted. Use "Undo last change" to bring them back.');
       await reload();
     });
 
     api.storage.onChanged.addListener((changes, area) => {
-      if (area === 'local' && changes.bank && editing == null) reload();
+      if (area !== 'local') return;
+      if (changes.bank && editing == null) reload();
+      if (changes.syncStatus || changes.pendingOps || changes.syncConfig) renderSync();
     });
 
     await reload();
+    await renderSync();
+    if (cloudOn) syncNow();
   }
 
   init();
