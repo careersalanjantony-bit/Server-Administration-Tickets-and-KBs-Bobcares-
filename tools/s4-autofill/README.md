@@ -305,7 +305,7 @@ if there are errors.
 
 ```bash
 python3 -m pytest tests/ -q      # 104 tests, the planner
-cd extension && node --test      # 133 tests, the extension
+cd extension && node --test      # 147 tests, the extension
 ```
 
 ---

@@ -19,6 +19,8 @@
       // A radio or checkbox only counts if it is ticked; its value attribute is
       // there either way. Without this the last of seven radios won.
       checked: type === "radio" || type === "checkbox" ? !!el.checked : undefined,
+      // A disabled control is not submitted, so it must not be echoed either.
+      disabled: !!el.disabled,
     };
   }
 
@@ -29,6 +31,7 @@
       // sends several values, which a flat body cannot carry, so it is left
       // for the mapping to fill or not at all.
       selected: el.multiple || el.value === undefined ? undefined : el.value,
+      disabled: !!el.disabled,
       options: Array.from(el.options).map((o) => ({
         value: o.value,
         text: (o.textContent || "").trim(),

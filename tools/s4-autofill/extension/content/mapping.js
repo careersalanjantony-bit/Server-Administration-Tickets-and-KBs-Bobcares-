@@ -49,6 +49,7 @@
     const categoryByName = new Map(
       Object.entries(categories).map(([code, name]) => [clean(name), code])
     );
+    const categoryByCode = new Map(Object.keys(categories).map((code) => [clean(code), code]));
     const techByName = new Map();
     techs.forEach((tech) => {
       [tech.id, tech.display_name, tech.email ? tech.email.split("@")[0] : ""]
@@ -80,10 +81,12 @@
           const value = option.value != null ? String(option.value) : "";
           const slotId = slotByTime.get(timeKey(text)) || slotByName.get(clean(text));
           let code = categoryByName.get(clean(text));
-          if (!code) {
-            // S4 writes categories as "Working Day(W)".
-            const bracketed = text.match(/\(([A-Z]{1,3})\)/);
-            if (bracketed && categories[bracketed[1]]) code = bracketed[1];
+          // S4 writes categories as "Working Day(W)" — and "Off" in mixed
+          // case, which an upper-case-only match missed.
+          const bracketed = /^(.*?)\(([^()]+)\)\s*$/.exec(text);
+          if (!code && bracketed) {
+            code = categoryByCode.get(clean(bracketed[2])) ||
+              categoryByName.get(clean(bracketed[1]));
           }
           const techId = techByName.get(clean(text));
 
@@ -100,7 +103,7 @@
         ];
         const best = Math.max.apply(null, counts);
         if (best === 0) {
-          result.unmatched[select.name] = missed.slice(0, 12);
+          result.unmatched[select.name] = missed.slice(0, 40);
           return;
         }
         // Only the dropdown with the most matches gets to name the field. A
@@ -118,7 +121,7 @@
         if (counts[0] === best) claim("shift_time", slotHits, result.shiftTimeValues);
         else if (counts[1] === best) claim("category", categoryHits, result.categoryValues);
         else claim("staff", staffHits, result.staffValues);
-        if (missed.length) result.unmatched[select.name] = missed.slice(0, 12);
+        if (missed.length) result.unmatched[select.name] = missed.slice(0, 40);
       });
     });
 
@@ -153,8 +156,10 @@
     ["shift_time", ["shift_time", "shifttime"]],
     ["category", ["cat", "category"]],
     ["staff", ["uid", "staff", "emp", "tech", "member"]],
-    ["reason", ["reasoncomment", "reason"], ["radio", "checkbox", "submit", "button"]],
-    ["log", ["comment", "log"], ["radio", "checkbox", "submit", "button"]],
+    // reasonComment is hidden and carries the row's existing comment back to
+    // S4; it is S4's to fill, not ours.
+    ["reason", ["reasoncomment", "reason"], ["radio", "checkbox", "submit", "button", "hidden"]],
+    ["log", ["comment", "log"], ["radio", "checkbox", "submit", "button", "hidden"]],
   ];
 
   function suggestFields(forms, formName) {
@@ -241,8 +246,15 @@
       const iso = /^\d{4}-\d{2}-\d{2}$/.test(existing || "");
       return iso && parsed ? parsed.iso : plain;
     };
-    put("start_date", asRendered("start_date", payload.start_date, from));
-    put("end_date", asRendered("end_date", payload.end_date, to));
+    // Where the form splits the date into day, month and year, those are the
+    // range being changed, and sdate/edate are only the grid view S4 returns
+    // to afterwards (the whole month). Left as rendered, as a person saving
+    // the editor would leave them.
+    const split = fields.start_day && fields.end_day;
+    if (!split) {
+      put("start_date", asRendered("start_date", payload.start_date, from));
+      put("end_date", asRendered("end_date", payload.end_date, to));
+    }
     if (from) {
       put("start_day", from.day);
       put("start_month", from.month);
@@ -262,8 +274,14 @@
     put("time_meridiem", meridiem);
     put("duration_hours", String(durationHours));
     put("duration_minutes", String(durationMinutes).padStart(2, "0"));
-    put("reason", payload.reason || "");
-    put("log", payload.reason || "");
+    // Comments are left as S4 rendered them. The popup hands the row's
+    // existing note back in reasonComment, and overwriting either would lose
+    // what a person wrote there ("nischitha.ns req"). Opt in with
+    // mapping.writeComments.
+    if (mapping.writeComments) {
+      put("reason", payload.reason || "");
+      put("log", payload.reason || "");
+    }
     Object.assign(body, mapping.constantFields || {});
     return body;
   }
@@ -277,10 +295,15 @@
   function baseFieldsOf(forms, formName) {
     const form =
       (forms || []).find((f) => f.name === formName) || (forms || [])[0] || { inputs: [] };
+    // Exactly what a browser would send when the editor's Edit button is
+    // pressed: every enabled control, empty text included, ticked boxes only,
+    // one submit button, and never a plain button or a password.
     const base = {};
+    let submitted = false;
     (form.inputs || []).forEach((input) => {
       const type = (input.type || "text").toLowerCase();
-      if (!input.name || type === "password") return;
+      if (!input.name || input.disabled) return;
+      if (["password", "button", "reset", "file", "image"].indexOf(type) !== -1) return;
       if (type === "radio" || type === "checkbox") {
         // Only what is ticked is submitted. Echoing every option would post
         // the last one — the probe showed hcl_co=NB and shift_comment=2 going
@@ -288,16 +311,18 @@
         if (input.checked) base[input.name] = input.value || "on";
         return;
       }
-      if (type === "hidden" || type === "submit") {
-        base[input.name] = input.value || "";
-      } else if (input.value) {
-        base[input.name] = input.value;
+      if (type === "submit") {
+        if (!submitted) base[input.name] = input.value || "";
+        submitted = true;
+        return;
       }
+      base[input.name] = input.value || "";
     });
     // A dropdown is submitted with whatever it shows. Leaving the ones the
     // mapping does not fill out of the post would blank them on S4's side.
     (form.selects || []).forEach((select) => {
-      if (!select.name || select.selected === undefined || select.selected === null) return;
+      if (!select.name || select.disabled) return;
+      if (select.selected === undefined || select.selected === null) return;
       if (!(select.name in base)) base[select.name] = String(select.selected);
     });
     return base;
@@ -482,6 +507,65 @@
     return { index, duplicates };
   }
 
+  /** A grid cell's time, "65800" or "070000" (HHMMSS), as "06:58". */
+  function cellTime(text) {
+    const digits = String(text || "").replace(/\D/g, "");
+    if (!digits) return null;
+    const padded = digits.padStart(6, "0").slice(-6);
+    return `${padded.slice(0, 2)}:${padded.slice(2, 4)}`;
+  }
+
+  /** Every date a block covers, as YYYY-MM-DD. */
+  function blockDays(payload) {
+    const from = splitDate(payload.start_date);
+    const to = splitDate(payload.end_date || payload.start_date);
+    if (!from || !to) return [];
+    const days = [];
+    const at = new Date(Date.UTC(+from.year, +from.month - 1, +from.day));
+    const end = Date.UTC(+to.year, +to.month - 1, +to.day);
+    while (at.getTime() <= end && days.length < 62) {
+      days.push(at.toISOString().slice(0, 10));
+      at.setUTCDate(at.getUTCDate() + 1);
+    }
+    return days;
+  }
+
+  // Categories whose rows carry a shift time. The editor itself only shows
+  // the time fields for these (show_details(): cat 1, 2 and 28).
+  const TIMED = new Set(["W", "ITW", "NB"]);
+
+  /**
+   * What S4 already holds for a block, read off the grid.
+   *
+   * Each cell's popup() call carries that day's time, duration and category,
+   * so the grid alone says whether a block would change anything.
+   */
+  function compareBlock(payload, uid, index, categoryValues) {
+    const byValue = {};
+    Object.entries(categoryValues || {}).forEach(([code, value]) => {
+      byValue[String(value)] = code;
+    });
+    const days = blockDays(payload);
+    const differ = [];
+    let seen = 0;
+    days.forEach((iso) => {
+      const cell = index[`${uid}|${iso}`];
+      if (!cell) return;
+      seen += 1;
+      const category = byValue[String(cell.cat_id)] || `cat ${cell.cat_id}`;
+      const time = cellTime(cell.time);
+      const sameCategory = category === payload.category;
+      const sameTime =
+        !TIMED.has(payload.category) ||
+        (time === payload.time &&
+          String(cell.duration || "") === String(payload.duration_min || ""));
+      if (!(sameCategory && sameTime)) {
+        differ.push(`${iso} S4 has ${TIMED.has(category) ? `${time} ` : ""}${category}`);
+      }
+    });
+    return { same: seen === days.length && seen > 0 && !differ.length, seen, days, differ };
+  }
+
   /** Which mappings are still missing before a live run is safe. */
   function missingMapping(mapping, plan) {
     const required = [
@@ -507,7 +591,7 @@
     timeKey, clean, matchOptions, suggestFields, buildBody, missingMapping,
     splitDate, baseFieldsOf,
     KNOWN_POPUP_PARAMS, parseCallArgs, parseConcat, popupSignature, editorUrl,
-    normaliseDate, indexCells,
+    normaliseDate, indexCells, cellTime, blockDays, compareBlock,
   };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.S4Mapping = api;

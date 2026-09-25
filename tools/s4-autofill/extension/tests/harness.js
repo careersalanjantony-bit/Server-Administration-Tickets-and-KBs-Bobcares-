@@ -84,9 +84,12 @@ function gridCellsFor(techIds, { month = "2026-10", days = 31, team = "6" } = {}
 }
 
 function popupCall(cell) {
+  const or = (value, fallback) => (value === undefined ? fallback : value);
   return (
-    `popup('${cell.cal_id}','${cell.date}','${cell.user}','${cell.team}','06:58','480','1',` +
-    `'2026-10-01','2026-10-31','N','','')`
+    `popup('${cell.cal_id}','${cell.date}','${cell.user}','${cell.team}',` +
+    `'${or(cell.time, "06:58")}','${or(cell.duration, "480")}','${or(cell.cat_id, "1")}',` +
+    `'${or(cell.start_date, "2026-10-01")}','${or(cell.end_date, "2026-10-31")}','N',` +
+    `'${or(cell.comment, "")}')`
   );
 }
 

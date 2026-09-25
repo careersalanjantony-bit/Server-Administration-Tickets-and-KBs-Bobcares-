@@ -196,10 +196,21 @@ const REQUIRED_FIELDS = [
  */
 function readPage(forms, plan) {
   const matched = S4Mapping.matchOptions(forms, plan);
-  const fields = Object.assign(
-    S4Mapping.suggestFields(forms, plan.form_name || "shift"),
-    matched.fields
-  );
+  const suggested = S4Mapping.suggestFields(forms, plan.form_name || "shift");
+  const fields = Object.assign({}, suggested, matched.fields);
+  // An edit form that carries the person in a hidden field is editing that
+  // person. Its dropdowns of people are for naming somebody else — S4's
+  // change_shift has five (members, members_ecl, …) — and the biggest of them
+  // was being taken as the staff field, which would have posted the tech's id
+  // into a cover-person picker.
+  const hiddenStaff =
+    suggested.staff &&
+    (forms || []).some((form) =>
+      (form.inputs || []).some(
+        (input) => input.name === suggested.staff && (input.type || "").toLowerCase() === "hidden"
+      )
+    );
+  if (hiddenStaff) fields.staff = suggested.staff;
   const requiredFields = REQUIRED_FIELDS.filter((name) => fields[name]).length;
   return {
     fields,
@@ -318,6 +329,13 @@ async function prepareRow(payload, mapping, ctx, openEditor) {
   const row = resolveRow(payload, mapping, ctx.index);
   if (row.error) return { ok: false, skipped: true, detail: row.error };
 
+  // The grid already says what S4 holds for each day. A block that matches it
+  // on every day needs nothing sent, which also makes running twice harmless.
+  const current = S4Mapping.compareBlock(payload, row.uid, ctx.index, mapping.categoryValues);
+  if (current.same) {
+    return { ok: true, unchanged: true, calId: row.cell.cal_id, current, opened: false };
+  }
+
   const url = new URL(S4Mapping.editorUrl(row.cell, ctx.signature), ctx.base).href;
   // Unopened rows only ever reach a dry run's table. Show them with their own
   // row's id rather than whichever row the probe happened to open.
@@ -357,7 +375,15 @@ async function prepareRow(payload, mapping, ctx, openEditor) {
     editor: url,
     calId: row.cell.cal_id,
     opened: openEditor,
+    current,
   };
+}
+
+/** "would change: 2026-10-01 S4 has 06:58 W (+2 more days)" */
+function describeChange(current) {
+  if (!current || !current.differ.length) return "";
+  const more = current.differ.length - 1;
+  return `would change: ${current.differ[0]}${more ? ` (+${more} more day${more > 1 ? "s" : ""})` : ""}`;
 }
 
 function coverage(plan, mapping, grid) {
@@ -519,20 +545,27 @@ async function runPlan(dryRun) {
         body: S4Mapping.buildBody(payload, mapping),
       };
     } else if (dryRun) {
-      const open = dryOpened < DRY_OPEN && !!resolveRow(payload, mapping, index).cell;
-      if (open) dryOpened += 1;
-      const prepared = await prepareRow(payload, mapping, ctx, open);
+      const prepared = await prepareRow(payload, mapping, ctx, dryOpened < DRY_OPEN);
+      if (prepared.opened) dryOpened += 1;
+      let detail = prepared.detail;
+      if (prepared.unchanged) detail = "already in S4 — nothing to change";
+      else if (prepared.ok) {
+        detail =
+          `dry run — row ${prepared.calId} ${prepared.opened ? "opened" : "found"}, nothing sent` +
+          (describeChange(prepared.current) ? `; ${describeChange(prepared.current)}` : "");
+      }
       result = {
         ok: prepared.ok,
         skipped: prepared.skipped,
-        detail: prepared.ok
-          ? `dry run — row ${prepared.calId} ${prepared.opened ? "opened" : "found"}, nothing sent`
-          : prepared.detail,
+        unchanged: !!prepared.unchanged,
+        detail,
         body: prepared.body,
       };
     } else {
       const prepared = await prepareRow(payload, mapping, ctx, true);
-      if (prepared.skipped) {
+      if (prepared.unchanged) {
+        result = { ok: true, unchanged: true, detail: "already in S4 — nothing sent" };
+      } else if (prepared.skipped) {
         result = { ok: false, skipped: true, detail: `skipped — ${prepared.detail}` };
       } else if (!prepared.ok) {
         result = { ok: false, detail: prepared.detail, body: prepared.body };
@@ -559,6 +592,7 @@ async function runPlan(dryRun) {
       why: payload.source || "",
       ok: !!result.ok,
       skipped: !!result.skipped,
+      unchanged: !!result.unchanged,
       detail: result.detail || "",
       body: result.body,
     });
@@ -573,7 +607,11 @@ async function runPlan(dryRun) {
         shift: payload.shift_time,
         detail: result.detail,
       });
-    } else if (!dryRun && (i < 3 || (i + 1) % 50 === 0 || i === payloads.length - 1)) {
+    } else if (
+      !dryRun &&
+      !result.unchanged &&
+      (i < 3 || (i + 1) % 50 === 0 || i === payloads.length - 1)
+    ) {
       // Every row is in the results table; the log keeps the shape of the run
       // without 534 near-identical lines burying the failures.
       note("ok", `Posted ${i + 1} of ${payloads.length}`, {
@@ -606,6 +644,7 @@ async function runPlan(dryRun) {
         accepted: ok,
         refused: state.run.results.filter((r) => !r.ok && !r.skipped).length,
         skipped: state.run.results.filter((r) => r.skipped).length,
+        alreadyInS4: state.run.results.filter((r) => r.unchanged).length,
         stopped: state.run.stopped || false,
       }
     );
@@ -782,15 +821,27 @@ const handlers = {
         }
       }
 
-      // The same cell can turn up on several pages; keep one per cal_id.
-      const byId = new Map();
+      // The same cell turns up on several pages. S4 reuses one cal_id for a
+      // person across every day and month, so a cell is only the same cell
+      // when the person and the day match too — keying on cal_id alone threw
+      // away every October cell as a duplicate of that person's September one.
+      const byKey = new Map();
       grid.cells.forEach((cell) => {
-        const key = cell.cal_id || `${cell.user}|${cell.date}`;
-        if (!byId.has(key)) byId.set(key, cell);
+        const key = `${cell.cal_id}|${cell.user}|${S4Mapping.normaliseDate(cell.date) || cell.date}`;
+        if (!byKey.has(key)) byKey.set(key, cell);
       });
-      grid.cells = [...byId.values()];
+      const allCells = [...byKey.values()];
+      // Only the plan's month is ever written, so only its cells are kept.
+      const inPlanMonth = allCells.filter((cell) =>
+        (S4Mapping.normaliseDate(cell.date) || "").startsWith(plan.month)
+      );
+      grid.cells = inPlanMonth;
+      grid.readTotal = allCells.length;
+      grid.otherSample = allCells.filter((cell) => !inPlanMonth.includes(cell)).slice(0, 3);
       note(grid.cells.length ? "ok" : "warn", "Read the grid's calendar rows", {
         cells: grid.cells.length,
+        month: plan.month,
+        otherMonths: allCells.length - inPlanMonth.length,
         popupFound: !!grid.signature,
         sources: grid.sources.map((src) => `${src.url} (${src.cells})`),
       });
@@ -798,10 +849,10 @@ const handlers = {
       // Open one real cell's editor. Read with a bare cal_id, S4 renders the
       // editor blank — no categories, no shift times, no row ids. Read against a
       // real row, it renders the form it actually expects back.
-      if (host && grid.cells.length) {
+      if (host && allCells.length) {
         // A row that really exists, in the plan's month, on this team if the
         // plan says which.
-        const real = grid.cells.filter(
+        const real = (grid.cells.length ? grid.cells : allCells).filter(
           (cell) => /^\d+$/.test(String(cell.cal_id || "")) && Number(cell.cal_id) > 0
         );
         const inMonth = real.filter((cell) =>
@@ -811,7 +862,7 @@ const handlers = {
           inMonth.find((cell) => String(cell.team) === String(plan.team_id)) ||
           inMonth[0] ||
           real[0] ||
-          grid.cells[0];
+          allCells[0];
         const url = new URL(
           S4Mapping.editorUrl(sampleCell, grid.signature),
           `${new URL(host.url).origin}/`
@@ -974,6 +1025,8 @@ const handlers = {
 
       state.grid = {
         signature: grid.signature,
+        readTotal: grid.readTotal,
+        otherSample: grid.otherSample,
         cells: grid.cells,
         sources: grid.sources,
         calls: grid.calls,
@@ -1092,7 +1145,17 @@ const handlers = {
               calls: state.grid.calls,
               // Enough of one person's month to see whether each day is its
               // own row or one row spans several.
-              sampleCells: state.grid.cells.slice(0, 6),
+              readTotal: state.grid.readTotal,
+              otherSample: state.grid.otherSample,
+              // One person's first week, to see each day's own values.
+              sampleCells: (() => {
+                const first = state.grid.cells[0];
+                if (!first) return [];
+                return state.grid.cells
+                  .filter((c) => c.user === first.user)
+                  .sort((a, b) => String(a.date).localeCompare(String(b.date)))
+                  .slice(0, 7);
+              })(),
               distinctRowIds: new Set(state.grid.cells.map((c) => c.cal_id)).size,
               cellsSpanningDays: state.grid.cells.filter(
                 (c) => c.start_date && c.end_date && c.start_date !== c.end_date
@@ -1107,7 +1170,25 @@ const handlers = {
             : null,
         // The first rows of the last run as built — after a dry run these
         // are real editors read for real rows, cal_id and all.
-        firstBodies: state.run.results.slice(0, 3).map((r) => ({
+        // Every option of the posting form's own dropdowns, in full — the
+        // mismatch list is capped, and a missing category hides in the cap.
+        editorOptions: (() => {
+          const form =
+            (mapping.forms || []).find((f) => f.name === "change_shift") ||
+            (mapping.forms || [])[0];
+          const out = {};
+          ((form && form.selects) || [])
+            .filter((sel) => sel.name === "cat" || sel.name === "shift_time")
+            .forEach((sel) => {
+              out[sel.name] = (sel.options || []).map((o) => `${o.value}=${o.text}`);
+            });
+          return out;
+        })(),
+        firstBodies: state.run.results
+          .filter((r) => r.body)
+          .slice(0, 3)
+          .concat(state.run.results.filter((r) => !r.body).slice(0, 2))
+          .map((r) => ({
           tech: r.tech,
           from: r.from,
           to: r.to,

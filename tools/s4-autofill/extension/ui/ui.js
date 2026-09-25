@@ -133,9 +133,11 @@ function renderResults(run) {
   const ok = rows.filter((r) => r.ok).length;
   const skipped = rows.filter((r) => r.skipped).length;
   const bad = rows.length - ok - skipped;
+  const unchanged = rows.filter((r) => r.unchanged).length;
   $("counts").textContent =
     `${ok} ok, ${bad} failed` +
     (skipped ? `, ${skipped} skipped (no calendar row)` : "") +
+    (unchanged ? ` · ${unchanged} already in S4` : "") +
     (run.dryRun ? " (dry run)" : "");
 
   const onlyFailures = $("failuresOnly").checked;
@@ -146,7 +148,7 @@ function renderResults(run) {
     const tr = document.createElement("tr");
     const state = document.createElement("td");
     state.className = "state " + (row.ok ? "ok" : row.skipped ? "skip" : "bad");
-    state.textContent = row.ok ? "✓" : row.skipped ? "–" : "✕";
+    state.textContent = row.unchanged ? "=" : row.ok ? "✓" : row.skipped ? "–" : "✕";
     const what = document.createElement("td");
     const days = row.days > 1 ? ` (${row.days}d)` : "";
     what.textContent = `${row.tech}  ${row.from}→${row.to}${days}  ${row.shift || ""}`;

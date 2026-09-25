@@ -110,10 +110,13 @@ day, and the month grid is the only place it comes from. Each cell calls
           start_date, end_date, co_flag, comment, referer_team_id)
 
 and `popup()` opens `index.php?action=chkshift&cal_id=…&cal_date=…&cal_user_id=…`
-with those values. So the probe reads every `popup(…)` call in the grid (the
-open tab first, since that is where any javascript-drawn cells exist, then the
-month grid fetched by address), keeps one cell per `cal_id`, and indexes them by
-S4 user id and date. `popup()`'s own definition is read off the page too, so
+with those values. S4 reuses **one `cal_id` per person** across every day and
+month; the day is `date`, and `time` (HHMMSS, `65800` = 06:58), `duration` and
+`cat_id` are that day's current values. So the probe reads every `popup(…)`
+call in the grid (the open tab first, then the month grid fetched by address),
+keeps one cell per person per day, drops other months, and indexes them by S4
+user id and date. (Keying on `cal_id` alone once threw every October cell away
+as a duplicate of the same person's September one.) `popup()`'s own definition is read off the page too, so
 the editor address is built the way S4 builds it, including its fallback of
 `referer_team_id` to the cell's own team.
 
@@ -123,12 +126,20 @@ A run then does this for each block:
    No cell, or a cell with no row id, and the block is **skipped** — listed in
    the results, not counted as a failure, nothing sent.
 2. Open that cell's editor, exactly as clicking it would.
-3. Build the body from what that editor rendered — its `cal_id`, `tid`, `view`,
-   `prv_caldate`, the ticked radios, each dropdown's current value — and
-   overwrite only the fields being set.
+3. Build the body exactly as a browser would submit that editor — every
+   enabled control, empty text included, ticked radios only, one submit
+   button — and overwrite only the fields being set. The person is the hidden
+   `uid`; the `members…` dropdowns (for naming somebody else) are never
+   touched. The range changed is `startday`…`endyear`; `sdate`/`edate` are the
+   grid view S4 returns to and are left alone, as are comments.
 4. Refuse the row if the editor came back without a `cal_id`, for a different
    user than the block is about, or without the category or shift time asked
    for. Otherwise post it to the editor form's own action.
+
+Before any of that, the block is compared with what the grid says S4 already
+holds for each of its days. A block that matches on every day is marked
+*already in S4* and nothing is opened or sent, so a second run is harmless and
+a dry run over a hand-filled month shows exactly what would change.
 
 A live run is refused outright if the grid's rows were never read. A dry run
 opens the first five resolvable rows' editors (reading is harmless) so the
@@ -276,7 +287,7 @@ It writes to a live roster, so:
 node --test
 ```
 
-133 tests. They load the real `background.js` and `content/s4page.js` into a VM
+147 tests. They load the real `background.js` and `content/s4page.js` into a VM
 with a stand-in `browser` API and a form shaped like S4's, and cover the things
 that would actually corrupt a roster: that duration fields are never mistaken
 for the clock fields, that midnight and noon do not post as hour zero, that a

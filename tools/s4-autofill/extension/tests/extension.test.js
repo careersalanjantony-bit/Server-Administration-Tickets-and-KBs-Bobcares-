@@ -1297,17 +1297,24 @@ test("the split date parts are filled from the plan, not left as rendered", () =
   assert.strictEqual(body.endday, "03", "the end date moves with the block");
 });
 
-test("dates are sent in the format S4 rendered them in", () => {
+test("with split date fields, sdate and edate stay the grid view S4 returns to", () => {
+  // On change_shift the range being changed is startday…endyear. sdate/edate
+  // arrive from popup() as the grid's view range (the whole month) and are
+  // where S4 goes back to after saving — a person saving leaves them alone.
   const harness = load({ techIds: TECHS });
   const body = harness.S4Mapping.buildBody(ROW, renderedMapping(harness));
-  // The hidden sdate came back as 2026-10-01, so ISO is what it wants.
   assert.strictEqual(body.sdate, "2026-10-01");
-  assert.strictEqual(body.edate, "2026-10-03");
+  assert.strictEqual(body.edate, "2026-10-31", "the view's end, not the block's");
+  assert.strictEqual(`${body.endyear}-${body.endmonth}-${body.endday}`, "2026-10-03");
 });
 
-test("a form rendering dd-Mon-yyyy gets dd-Mon-yyyy back", () => {
+test("without split date fields the dates go in the format S4 rendered them in", () => {
   const harness = load({ techIds: TECHS });
   const mapping = renderedMapping(harness);
+  ["start_day", "start_month", "start_year", "end_day", "end_month", "end_year"].forEach(
+    (name) => delete mapping.fields[name]
+  );
+  assert.strictEqual(harness.S4Mapping.buildBody(ROW, mapping).edate, "2026-10-03", "ISO");
   mapping.baseFields.sdate = "01-Oct-2026";
   mapping.baseFields.edate = "31-Oct-2026";
   const body = harness.S4Mapping.buildBody(ROW, mapping);
@@ -1825,4 +1832,284 @@ test("a successful probe does not repeat itself in diagnostics", async () => {
   const { harness } = await ready();
   const diag = await harness.send("diagnostics");
   assert.strictEqual(diag.lastProbe, null);
+});
+
+// ---------------------------------------------- what the real grid looks like
+// From a live probe of October: 899 cells, but S4 reuses one cal_id per person
+// across every day and month, each popup() carrying that day's date, time
+// (HHMMSS, "65800"), duration and category. The editor names the person in a
+// hidden uid and carries five dropdowns of people (members, members_ecl, …)
+// for naming somebody else. sdate/edate are the grid view it returns to;
+// startday…endyear are the range being changed.
+
+const REAL_CAL_IDS = ["35065", "39310"];
+
+/** One cal_id per person, every day of September and October, as S4 serves it. */
+function realCells({ time = "65800", cat = "1" } = {}) {
+  const cells = [];
+  TECHS.forEach((_, t) => {
+    [["2026-09", 30], ["2026-10", 31]].forEach(([month, days]) => {
+      for (let day = 1; day <= days; day += 1) {
+        cells.push({
+          cal_id: REAL_CAL_IDS[t],
+          date: `${month}-${String(day).padStart(2, "0")}`,
+          user: String(200 + t),
+          team: "6",
+          time,
+          duration: "480",
+          cat_id: cat,
+          start_date: `${month}-01`,
+          end_date: `${month}-${days}`,
+          comment: t === 0 ? "mojin.t req" : "",
+        });
+      }
+    });
+  });
+  return cells;
+}
+
+const REAL_CATEGORIES = [
+  ["1", "Working Day(W)"], ["2", "In Team Work(ITW)"], ["7", "Casual Leave(CL)"],
+  ["8", "Medical Leave(ML)"], ["6", "Paid Vacation(PV)"], ["33", "Gandhi Jayanti(GJ)"],
+  ["3", "Off(Off)"],
+];
+
+/** change_shift as S4 renders it for one real row. */
+function realEditor(params, ids) {
+  const date = params.get("cal_date");
+  const [y, m, d] = date.split("-");
+  const hidden = (name, value) => ({ name, type: "hidden", value });
+  const inputs = [
+    hidden("cal_id", params.get("cal_id")), hidden("uid", params.get("cal_user_id")),
+    hidden("tid", "6"), hidden("referer_team_id", "6"),
+    hidden("sdate", params.get("sdate")), hidden("edate", params.get("edate")),
+    hidden("view", "1"), hidden("prv_caldate", date),
+    hidden("reasonComment", params.get("comment") || ""),
+    hidden("startday", d), hidden("startmonth", m), hidden("startyear", y),
+    hidden("endday", d), hidden("endmonth", m), hidden("endyear", y),
+    { name: "hour", type: "text", value: "" },
+    { name: "minute", type: "text", value: "00" },
+    { name: "ampm", type: "radio", value: "am", checked: true },
+    { name: "ampm", type: "radio", value: "pm", checked: false },
+    { name: "duration_h", type: "text", value: "8" },
+    { name: "duration_m", type: "text", value: "00" },
+    { name: "hcl_co", type: "checkbox", value: "B", checked: false },
+    { name: "hcl_co", type: "checkbox", value: "NB", checked: false },
+    { name: "shift_comment", type: "radio", value: "2", checked: false },
+    { name: "shift_comment", type: "radio", value: "5", checked: true },
+    { name: "comment", type: "textarea", value: "" },
+    { name: "countdown", type: "text", value: "200" },
+    { name: "Go", type: "button", value: "Go" },
+    { name: "Edit", type: "submit", value: "Edit" },
+  ];
+  const people = [{ value: "", textContent: "Select" }].concat(
+    ids.map((id, i) => ({ value: String(200 + i), textContent: id }))
+  );
+  const selects = [
+    { name: "cat", value: "1", options: REAL_CATEGORIES.map(([v, t]) => ({ value: v, textContent: t })) },
+    {
+      name: "shift_time",
+      value: "",
+      options: [{ value: "", textContent: "Select" }].concat(
+        require("./harness.js").SLOT_LABELS.map((label, i) => ({
+          value: label === "Flexy" ? "Other" : String(850 + i),
+          textContent: label,
+        }))
+      ),
+    },
+    { name: "members", value: "", options: people },
+    { name: "members_ecl", value: "", options: people },
+  ];
+  const form = {
+    getAttribute: (name) =>
+      ({ name: "change_shift", action: "index.php?action=chkshift", method: "POST" }[name] || null),
+    querySelectorAll: (selector) => {
+      const out = [];
+      if (/input|textarea/.test(selector)) out.push(...inputs);
+      if (/select/.test(selector)) out.push(...selects);
+      return out;
+    },
+  };
+  return { forms: [form], title: "S4", querySelectorAll: form.querySelectorAll };
+}
+
+async function realS4(options = {}) {
+  const harness = load(
+    Object.assign(
+      {
+        techIds: TECHS,
+        grid: "https://s4.inhouse.net/index.php?action=nothing",
+        cells: realCells(),
+        editor: realEditor,
+      },
+      options
+    )
+  );
+  await harness.send("setPlan", { plan: options.plan || samplePlan() });
+  await harness.send("setSettings", { settings: { delayMs: 0, allowWrites: true } });
+  const state = await harness.send("probe");
+  return { harness, state };
+}
+
+test("cells sharing a person's cal_id across days are all kept", async () => {
+  const { state } = await realS4();
+  assert.strictEqual(state.grid.cells.length, TECHS.length * 31, "every October cell");
+  assert.strictEqual(state.grid.readTotal, TECHS.length * 61, "September read too");
+  assert.deepStrictEqual(
+    { resolved: state.mapping.coverage.resolved, total: state.mapping.coverage.total },
+    { resolved: 2, total: 2 }
+  );
+});
+
+test("the sample editor is opened for a day in the plan's month", async () => {
+  const { harness } = await realS4();
+  const opened = harness.fetched.find((url) => /action=chkshift&cal_id=\d/.test(url));
+  assert.match(opened, /cal_date=2026-10-/);
+});
+
+test("the hidden uid stays the staff field, never a dropdown of other people", async () => {
+  const { state } = await realS4();
+  assert.strictEqual(state.mapping.fields.staff, "uid");
+  // The dropdowns still teach the extension each person's S4 id.
+  assert.deepStrictEqual(state.mapping.staffValues, { "mojin.t": "200", "alan.j": "201" });
+});
+
+test("a post names its person in uid and leaves the people pickers as rendered", async () => {
+  const { harness } = await realS4();
+  await harness.send("startRun", { dryRun: false });
+  const alan = harness.posted.find((p) => p.body.uid === "201");
+  assert.ok(alan, JSON.stringify(harness.posted.map((p) => p.body.uid)));
+  assert.strictEqual(alan.body.members, "");
+  assert.strictEqual(alan.body.members_ecl, "");
+  assert.strictEqual(alan.body.cal_id, REAL_CAL_IDS[1]);
+  assert.strictEqual(alan.body.prv_caldate, "2026-10-01", "the day the editor was opened for");
+});
+
+test("the range changed is the block's, and the view range is left alone", async () => {
+  const { harness } = await realS4();
+  await harness.send("startRun", { dryRun: false });
+  const alan = harness.posted.find((p) => p.body.uid === "201").body;
+  assert.deepStrictEqual(
+    [alan.startday, alan.startmonth, alan.endday, alan.endmonth],
+    ["01", "10", "02", "10"]
+  );
+  assert.strictEqual(alan.sdate, "2026-10-01");
+  assert.strictEqual(alan.edate, "2026-10-31");
+});
+
+test("comments already on a row are left as S4 rendered them", async () => {
+  const { harness } = await realS4({
+    cells: realCells({ time: "145800" }),
+  });
+  await harness.send("startRun", { dryRun: false });
+  const mojin = harness.posted.find((p) => p.body.uid === "200").body;
+  assert.strictEqual(mojin.reasonComment, "mojin.t req");
+  assert.strictEqual(mojin.comment, "");
+});
+
+test("the body is what a browser would submit for that editor", async () => {
+  const { harness } = await realS4();
+  await harness.send("startRun", { dryRun: false });
+  const body = harness.posted[0].body;
+  assert.ok(!("Go" in body), "a plain button is never submitted");
+  assert.strictEqual(body.Edit, "Edit");
+  assert.strictEqual(body.shift_comment, "5");
+  assert.ok(!("hcl_co" in body));
+  assert.strictEqual(body.countdown, "200");
+});
+
+test("Off is matched though S4 writes it in mixed case", () => {
+  const { matchOptions } = load({ techIds: TECHS }).S4Mapping;
+  const plan = samplePlan({
+    categories: { W: "Working Day", OFF: "Off", CL: "Casual Leave", PH: "Public Holiday" },
+  });
+  const matched = matchOptions(
+    [{ name: "change_shift", selects: [{ name: "cat", options: REAL_CATEGORIES.map(([value, text]) => ({ value, text })) }] }],
+    plan
+  );
+  assert.strictEqual(matched.categoryValues.OFF, "3");
+  assert.strictEqual(matched.categoryValues.W, "1");
+  assert.strictEqual(matched.categoryValues.CL, "7");
+  assert.ok(!matched.categoryValues.PH, "a named holiday is not the generic PH");
+});
+
+test("grid times are read as S4 writes them", () => {
+  const { cellTime } = load({ techIds: TECHS }).S4Mapping;
+  assert.strictEqual(cellTime("65800"), "06:58");
+  assert.strictEqual(cellTime("70000"), "07:00");
+  assert.strictEqual(cellTime("225800"), "22:58");
+  assert.strictEqual(cellTime(""), null);
+});
+
+test("a block is compared with every day S4 already holds", () => {
+  const { compareBlock, indexCells } = load({ techIds: TECHS }).S4Mapping;
+  const { index } = indexCells(realCells());
+  const block = {
+    tech_id: "mojin.t", category: "W", time: "06:58", duration_min: 480,
+    start_date: "01-Oct-2026", end_date: "03-Oct-2026",
+  };
+  const values = { W: "1", OFF: "3" };
+  assert.ok(compareBlock(block, "200", index, values).same);
+  const later = compareBlock(Object.assign({}, block, { time: "22:58" }), "200", index, values);
+  assert.ok(!later.same);
+  assert.strictEqual(later.differ.length, 3);
+  assert.match(later.differ[0], /2026-10-01 S4 has 06:58 W/);
+  const off = compareBlock(Object.assign({}, block, { category: "OFF" }), "200", index, values);
+  assert.match(off.differ[0], /06:58 W/);
+});
+
+test("a block S4 already holds is not sent again", async () => {
+  // mojin.t is planned 06:58 W on 1–3 October, which the cells already say;
+  // alan.j is planned 14:58, which they do not.
+  const { harness } = await realS4();
+  const before = harness.fetched.length;
+  const run = await harness.send("startRun", { dryRun: false });
+  assert.strictEqual(harness.posted.length, 1, "only alan.j's block");
+  assert.strictEqual(harness.posted[0].body.uid, "201");
+  const mojin = run.results.find((r) => r.tech === "mojin.t");
+  assert.ok(mojin.ok && mojin.unchanged, JSON.stringify(mojin));
+  assert.match(mojin.detail, /already in S4/);
+  assert.strictEqual(harness.fetched.slice(before).length, 1, "its editor was not even opened");
+});
+
+test("a dry run says what each block would change", async () => {
+  const { harness } = await realS4();
+  const run = await harness.send("startRun", { dryRun: true });
+  const alan = run.results.find((r) => r.tech === "alan.j");
+  assert.match(alan.detail, /would change: 2026-10-01 S4 has 06:58 W \(\+1 more day\)/);
+  const state = await harness.send("getState");
+  const ui = loadUi(state);
+  ui.render(state);
+  assert.match(ui.$("counts").textContent, /1 already in S4/);
+});
+
+test("disabled controls, plain buttons and a second submit are not echoed", () => {
+  const { baseFieldsOf } = load({ techIds: TECHS }).S4Mapping;
+  const base = baseFieldsOf(
+    [
+      {
+        name: "f",
+        inputs: [
+          { name: "a", type: "text", value: "", disabled: false },
+          { name: "b", type: "text", value: "x", disabled: true },
+          { name: "c", type: "button", value: "Go" },
+          { name: "Edit", type: "submit", value: "Edit" },
+          { name: "Delete", type: "submit", value: "Delete" },
+        ],
+        selects: [{ name: "s", selected: "1", disabled: true, options: [] }],
+      },
+    ],
+    "f"
+  );
+  assert.deepStrictEqual({ ...base }, { a: "", Edit: "Edit" });
+});
+
+test("diagnostics list the editor's categories in full", async () => {
+  const { harness } = await realS4();
+  await harness.send("startRun", { dryRun: true });
+  const diag = await harness.send("diagnostics");
+  assert.strictEqual(diag.mapping.editorOptions.cat.length, REAL_CATEGORIES.length);
+  assert.ok(diag.mapping.editorOptions.cat.includes("33=Gandhi Jayanti(GJ)"));
+  assert.strictEqual(diag.mapping.grid.sampleCells.length, 7);
+  assert.ok(diag.mapping.grid.sampleCells.every((c) => c.user === diag.mapping.grid.sampleCells[0].user));
 });
