@@ -9,7 +9,9 @@ const TECHS = ["mojin.t", "alan.j"];
 async function ready(options = {}) {
   const harness = load(Object.assign({ techIds: TECHS }, options));
   await harness.send("setPlan", { plan: options.plan || samplePlan() });
-  await harness.send("setSettings", { settings: { delayMs: 0 } });
+  await harness.send("setSettings", {
+    settings: { delayMs: 0, allowWrites: options.allowWrites !== false },
+  });
   const state = await harness.send("probe");
   return { harness, state };
 }
@@ -103,6 +105,7 @@ test("a dry run sends nothing at all", async () => {
 test("a live run refuses to start when the mapping is incomplete", async () => {
   const harness = load({ techIds: TECHS, selects: false });
   await harness.send("setPlan", { plan: samplePlan() });
+  await harness.send("setSettings", { settings: { allowWrites: true } });
   await harness.send("probe");
   const reply = await harness.send("startRun", { dryRun: false });
   assert.ok(reply.error, "should refuse");
@@ -171,7 +174,7 @@ test("stopping mid-run leaves the rest unsent", async () => {
   });
   const harness = load({ techIds: TECHS });
   await harness.send("setPlan", { plan });
-  await harness.send("setSettings", { settings: { delayMs: 25 } });
+  await harness.send("setSettings", { settings: { delayMs: 25, allowWrites: true } });
   await harness.send("probe");
   const running = harness.send("startRun", { dryRun: false });
   await new Promise((resolve) => setTimeout(resolve, 60));
@@ -242,13 +245,13 @@ test("fields rendered outside the form element are still found", async () => {
 test("an empty-form page still posts the same body", async () => {
   const loose = load({ techIds: TECHS, loose: true });
   await loose.send("setPlan", { plan: samplePlan() });
-  await loose.send("setSettings", { settings: { delayMs: 0 } });
+  await loose.send("setSettings", { settings: { delayMs: 0, allowWrites: true } });
   await loose.send("probe");
   await loose.send("startRun", { dryRun: false });
 
   const normal = load({ techIds: TECHS });
   await normal.send("setPlan", { plan: samplePlan() });
-  await normal.send("setSettings", { settings: { delayMs: 0 } });
+  await normal.send("setSettings", { settings: { delayMs: 0, allowWrites: true } });
   await normal.send("probe");
   await normal.send("startRun", { dryRun: false });
 
@@ -298,4 +301,47 @@ test("a plan carries its own coverage shortfalls", async () => {
   const harness = load({ techIds: TECHS });
   const state = await harness.send("setPlan", { plan });
   assert.deepStrictEqual(state.plan.issues.shortfalls.length, 1);
+});
+
+// ------------------------------------------------------------- the write lock
+// Only one month is ever unlocked in S4, so a mis-click on the live button
+// would land in a roster people are working to. Writing is off until asked for.
+
+test("writing is locked by default", async () => {
+  const harness = load({ techIds: TECHS });
+  await harness.send("setPlan", { plan: samplePlan() });
+  await harness.send("probe");
+  const reply = await harness.send("startRun", { dryRun: false });
+  assert.ok(reply.error, "should refuse");
+  assert.match(reply.error, /locked/i);
+  assert.strictEqual(harness.posted.length, 0);
+});
+
+test("a dry run works while writing is locked", async () => {
+  const harness = load({ techIds: TECHS });
+  await harness.send("setPlan", { plan: samplePlan() });
+  await harness.send("probe");
+  const run = await harness.send("startRun", { dryRun: true });
+  assert.ok(!run.error, run.error);
+  assert.strictEqual(run.results.length, 2);
+  assert.strictEqual(harness.posted.length, 0);
+});
+
+test("unlocking lets a live run through", async () => {
+  const harness = load({ techIds: TECHS });
+  await harness.send("setPlan", { plan: samplePlan() });
+  await harness.send("setSettings", { settings: { delayMs: 0, allowWrites: true } });
+  await harness.send("probe");
+  const run = await harness.send("startRun", { dryRun: false });
+  assert.ok(!run.error, run.error);
+  assert.strictEqual(harness.posted.length, 2);
+});
+
+test("the lock survives a reset of the run", async () => {
+  const harness = load({ techIds: TECHS });
+  await harness.send("setPlan", { plan: samplePlan() });
+  await harness.send("probe");
+  await harness.send("reset");
+  const reply = await harness.send("startRun", { dryRun: false });
+  assert.match(reply.error, /locked/i);
 });

@@ -144,8 +144,12 @@ function render(state) {
   const mappingClean = listProblems(mapping, plan);
 
   const busy = run.running;
+  const allowed = !!(state.settings && state.settings.allowWrites);
+  $("allowWrites").checked = allowed;
+  $("allowWrites").disabled = busy;
   $("dryRun").disabled = busy || !plan || !mapping;
-  $("live").disabled = busy || !plan || !mapping || !mappingClean;
+  $("live").disabled = busy || !plan || !mapping || !mappingClean || !allowed;
+  $("live").title = allowed ? "" : "Locked — tick “Allow writing to S4” to enable";
   $("probe").disabled = busy || !plan;
   $("planFile").disabled = busy;
   $("stop").hidden = !busy;
@@ -190,6 +194,13 @@ $("planFile").addEventListener("change", async (event) => {
 
 $("probe").addEventListener("click", async () => {
   const state = await call("probe");
+  if (state) render(state);
+});
+
+$("allowWrites").addEventListener("change", async (event) => {
+  const state = await call("setSettings", {
+    settings: { allowWrites: event.target.checked },
+  });
   if (state) render(state);
 });
 

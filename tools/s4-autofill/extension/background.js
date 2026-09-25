@@ -22,7 +22,10 @@ const DEFAULT_STATE = {
     stopped: false,
     note: "",
   },
-  settings: { delayMs: 700, stopAfterFailures: 3 },
+  // Writing is off until somebody deliberately turns it on. A dry run is
+  // the common case and a mis-click on the live button would otherwise go
+  // straight into a roster people are working to.
+  settings: { delayMs: 700, stopAfterFailures: 3, allowWrites: false },
 };
 
 let state = JSON.parse(JSON.stringify(DEFAULT_STATE));
@@ -93,6 +96,12 @@ async function runPlan(dryRun) {
   if (state.run.running) throw new Error("A run is already going.");
   if (!state.plan) throw new Error("Load a plan first.");
   if (!state.mapping) throw new Error("Probe the S4 form first.");
+  if (!dryRun && !state.settings.allowWrites) {
+    throw new Error(
+      "Writing to S4 is locked. Tick \u201cAllow writing to S4\u201d first — " +
+        "dry runs work without it."
+    );
+  }
 
   const payloads = payloadsFrom(state.plan);
   const missing = S4Mapping.missingMapping(state.mapping, state.plan);
