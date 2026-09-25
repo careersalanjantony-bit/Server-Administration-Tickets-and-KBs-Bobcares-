@@ -199,7 +199,11 @@ $("delay").addEventListener("change", async (event) => {
 
 $("dryRun").addEventListener("click", async () => {
   await call("startRun", { dryRun: true });
-  refresh();
+  // Shown so it is obvious which build is loaded — several have been handed
+// round and they are indistinguishable otherwise.
+$("build").textContent = "v" + browser.runtime.getManifest().version;
+
+refresh();
 });
 
 $("live").addEventListener("click", async () => {
@@ -212,7 +216,11 @@ $("live").addEventListener("click", async () => {
   );
   if (!confirmed) return;
   await call("startRun", { dryRun: false });
-  refresh();
+  // Shown so it is obvious which build is loaded — several have been handed
+// round and they are indistinguishable otherwise.
+$("build").textContent = "v" + browser.runtime.getManifest().version;
+
+refresh();
 });
 
 $("stop").addEventListener("click", async () => {
@@ -236,5 +244,9 @@ $("copy").addEventListener("click", async () => {
   $("copy").textContent = "copied";
   setTimeout(() => ($("copy").textContent = "Copy log"), 1200);
 });
+
+// Shown so it is obvious which build is loaded — several have been handed
+// round and they are indistinguishable otherwise.
+$("build").textContent = "v" + browser.runtime.getManifest().version;
 
 refresh();
