@@ -80,3 +80,13 @@ textarea {
 }
 details { margin-top: 8px; }
 summary { cursor: pointer; }
+
+input[type="text"] {
+  width: 100%;
+  font: 12px/1.4 monospace;
+  margin: 6px 0;
+  padding: 5px;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+}
+#mapWhere { font-size: 11px; }

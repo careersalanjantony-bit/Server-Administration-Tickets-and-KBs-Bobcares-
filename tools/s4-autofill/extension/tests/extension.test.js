@@ -461,3 +461,115 @@ test("the packaged xpi would carry every file the manifest names", () => {
     assert.ok(build.includes(entry), `build.sh does not package ${entry}`);
   });
 });
+
+// ------------------------------------------- S4 keeps the editor on its own page
+// The month grid holds a team switcher, an empty <form name="shift"> and two
+// date boxes — no Category, no Shift Time, no Duration. Probing it found
+// "2 fields · 0 shift times · 0 categories · 0 staff". The real editor opens in
+// another window, so the extension has to go and read that page.
+
+const { makeDocument } = require("./harness.js");
+
+const EDITOR_URL =
+  "https://s4.inhouse.net/index.php?action=view_shift&sdate=2026-10-01&edate=2026-10-31&t=6&edit_co_shift=N";
+
+function gridHarness(extra = {}) {
+  const editorDoc = makeDocument(TECHS, {});
+  return load(
+    Object.assign(
+      {
+        techIds: TECHS,
+        grid: EDITOR_URL,
+        pages: { [EDITOR_URL]: "EDITOR_HTML" },
+        documents: { EDITOR_HTML: editorDoc },
+      },
+      extra
+    )
+  );
+}
+
+test("probing the month grid alone finds almost nothing", async () => {
+  // Without following the link this is what the person saw.
+  const harness = load({ techIds: TECHS, grid: EDITOR_URL });
+  await harness.send("setPlan", { plan: samplePlan() });
+  const state = await harness.send("probe");
+  const found = state.mapping ? Object.keys(state.mapping.shiftTimeValues).length : 0;
+  assert.strictEqual(found, 0, "the grid has no shift times on it");
+});
+
+test("it follows the grid's own link to the editor and finds the form", async () => {
+  const harness = gridHarness();
+  await harness.send("setPlan", { plan: samplePlan() });
+  const state = await harness.send("probe");
+  assert.ok(!state.error, state.error);
+  assert.strictEqual(Object.keys(state.mapping.shiftTimeValues).length, 15);
+  assert.strictEqual(Object.keys(state.mapping.staffValues).length, 2);
+  assert.ok(harness.fetched.includes(EDITOR_URL), "should have read the editor page");
+});
+
+test("the page it settled on is reported, not the tab that was open", async () => {
+  const harness = gridHarness();
+  await harness.send("setPlan", { plan: samplePlan() });
+  const state = await harness.send("probe");
+  assert.strictEqual(state.mapping.tabUrl, EDITOR_URL);
+  assert.ok(state.mapping.looked.some((entry) => entry.fetched));
+});
+
+test("a pasted editor address is tried first", async () => {
+  const harness = gridHarness({ grid: "https://s4.inhouse.net/index.php?action=nothing" });
+  await harness.send("setPlan", { plan: samplePlan() });
+  await harness.send("setSettings", { settings: { editUrl: EDITOR_URL } });
+  const state = await harness.send("probe");
+  assert.ok(!state.error, state.error);
+  assert.strictEqual(Object.keys(state.mapping.shiftTimeValues).length, 15);
+  assert.strictEqual(harness.fetched[0], EDITOR_URL, "the pasted url should be read first");
+});
+
+test("a full run against the grid posts to the editor's action", async () => {
+  const harness = gridHarness();
+  await harness.send("setPlan", { plan: samplePlan() });
+  await harness.send("setSettings", { settings: { delayMs: 0, allowWrites: true } });
+  await harness.send("probe");
+  const run = await harness.send("startRun", { dryRun: false });
+  assert.ok(!run.error, run.error);
+  assert.strictEqual(harness.posted.length, 2);
+  assert.strictEqual(harness.posted[0].body.shift_time, "1");
+  assert.strictEqual(harness.posted[0].body.staff, "200");
+});
+
+test("a grid with no editor to find reports what is missing rather than erroring", async () => {
+  // The grid still has a team switcher and two date boxes, so it is not
+  // "nothing" — the honest outcome is an incomplete mapping listed in full,
+  // which is what the person saw.
+  const harness = load({
+    techIds: TECHS,
+    grid: "https://s4.inhouse.net/index.php?action=nothing",
+  });
+  await harness.send("setPlan", { plan: samplePlan() });
+  const state = await harness.send("probe");
+  assert.ok(!state.error, "it found *something*, so it should report, not throw");
+  const missing = harness.S4Mapping.missingMapping(state.mapping, samplePlan());
+  assert.ok(missing.fields.length, "should name the fields it could not find");
+  assert.ok(missing.slots.length, "should name the shift times it could not match");
+});
+
+test("a page with nothing on it at all names the fallback", async () => {
+  const harness = load({ techIds: [], selects: false, noFields: true });
+  await harness.send("setPlan", { plan: samplePlan() });
+  const reply = await harness.send("probe");
+  assert.ok(reply.error, "should refuse");
+  assert.match(reply.error, /editor page/i);
+});
+
+test("an incomplete mapping still blocks a live run", async () => {
+  const harness = load({
+    techIds: TECHS,
+    grid: "https://s4.inhouse.net/index.php?action=nothing",
+  });
+  await harness.send("setPlan", { plan: samplePlan() });
+  await harness.send("setSettings", { settings: { allowWrites: true } });
+  await harness.send("probe");
+  const reply = await harness.send("startRun", { dryRun: false });
+  assert.match(reply.error, /incomplete mapping/i);
+  assert.strictEqual(harness.posted.length, 0);
+});

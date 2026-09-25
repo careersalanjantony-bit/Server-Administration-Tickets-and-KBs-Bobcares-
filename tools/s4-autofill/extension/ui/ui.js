@@ -141,6 +141,11 @@ function render(state) {
   $("mapWhere").textContent = mapping && mapping.tabUrl
     ? `found on: ${mapping.tabUrl}`
     : "";
+  if (state.settings && $("editUrl").value === "") {
+    $("editUrl").value = state.settings.editUrl || "";
+  }
+  // Open the fallback on its own once the automatic search has come up short.
+  if (mapping && !mappingClean) $("editorDetails").open = true;
   const mappingClean = listProblems(mapping, plan);
 
   const busy = run.running;
@@ -219,8 +224,15 @@ $("planPasteLoad").addEventListener("click", async () => {
 });
 
 $("probe").addEventListener("click", async () => {
+  $("probe").textContent = "Looking…";
   const state = await call("probe");
+  $("probe").textContent = "Find the shift form";
   if (state) render(state);
+});
+
+$("editUrlSave").addEventListener("click", async () => {
+  await call("setSettings", { settings: { editUrl: $("editUrl").value.trim() } });
+  $("probe").click();
 });
 
 $("allowWrites").addEventListener("change", async (event) => {

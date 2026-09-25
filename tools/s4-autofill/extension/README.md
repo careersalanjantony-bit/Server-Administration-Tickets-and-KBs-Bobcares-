@@ -63,16 +63,25 @@ none of them.
 
 ### Which page to be on
 
-It does not matter much, which is deliberate. S4 spreads this over two windows:
-the month grid carries an empty `<form name="shift">` with the controls
-rendered loose in the document, and the edit popup carries a normal form. The
-probe checks **every open S4 tab**, sweeps up named fields whether or not they
-sit inside a `<form>`, and keeps whichever page has the real thing — then shows
-you which one it picked.
+The month grid, and it will find the rest itself.
 
-If it cannot find a shift form anywhere, it says so rather than guessing: open
-the shift edit window (the one with Category, Shift Time and Duration on it)
-and probe again.
+S4 does not put the shift editor on the grid. That page has a team switcher, an
+empty `<form name="shift">` and the From/To date boxes — probing it alone
+returns *"2 fields · 0 shift times · 0 categories · 0 staff"*. The editor opens
+in its own window, and its url carries `edit_co_shift`.
+
+So **Find the shift form** does three things in turn, stopping as soon as it has
+a complete mapping:
+
+1. Probes every open S4 tab.
+2. Pulls the urls out of the grid's own markup — links and `window.open(…)`
+   calls alike — ranks the ones that look like the editor first, and reads
+   those pages with the session already in the browser.
+3. Failing that, reads whatever address you paste under *"the editor is on
+   another page"*.
+
+It reports which page it settled on, and lists anything it could not match
+rather than guessing.
 
 The UI is a tab rather than a browser_action popup, because Firefox closes a
 popup the moment it loses focus — and opening the file picker does exactly
@@ -134,7 +143,7 @@ It writes to a live roster, so:
 node --test
 ```
 
-41 tests. They load the real `background.js` and `content/s4page.js` into a VM
+49 tests. They load the real `background.js` and `content/s4page.js` into a VM
 with a stand-in `browser` API and a form shaped like S4's, and cover the things
 that would actually corrupt a roster: that duration fields are never mistaken
 for the clock fields, that midnight and noon do not post as hour zero, that a
@@ -153,6 +162,10 @@ it by hand. Four of them now check the wiring itself — that the background pag
 loads what it calls into, that every file the manifest names exists, that
 `ui.html`'s scripts and stylesheets resolve, and that `build.sh` packages the
 lot.
+
+The fixture serves S4's real two-page shape — a grid with no editor on it,
+linking to an editor page that has one — because that is the layout that broke
+the first three attempts at this.
 
 The real October plan — 534 blocks, 868 tech-days — runs through the harness
 with all 15 shift times, all 28 staff and all 12 fields mapped, and nothing

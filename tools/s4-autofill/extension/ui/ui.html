@@ -33,6 +33,16 @@
     <p id="mapInfo" class="muted">Not read yet.</p>
     <p id="mapWhere" class="muted tiny"></p>
     <ul id="mapProblems" class="problems"></ul>
+    <details id="editorDetails">
+      <summary class="muted tiny">the editor is on another page</summary>
+      <p class="muted tiny">
+        S4 opens the shift editor in its own window, so the grid you are looking at
+        does not have the fields. It follows the grid's own links automatically —
+        if that misses, open the editor and paste its address here.
+      </p>
+      <input type="text" id="editUrl" placeholder="https://s4.inhouse.net/index.php?action=view_shift&amp;…&amp;edit_co_shift=N">
+      <button id="editUrlSave" type="button">Save and find again</button>
+    </details>
   </section>
 
   <section>

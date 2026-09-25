@@ -105,6 +105,43 @@ function makeDocument(techIds, { selects = true, loose = false, noFields = false
   };
 }
 
+/**
+ * The month grid as S4 actually serves it: a team switcher, an empty
+ * <form name="shift">, two date boxes, and links that open the editor in
+ * another window. No Category, no Shift Time, no Duration.
+ */
+function makeGridDocument(editUrl) {
+  const inputs = [
+    { name: "sdate", type: "text", value: "01-Oct-2026" },
+    { name: "edate", type: "text", value: "31-Oct-2026" },
+  ];
+  const selects = [
+    { name: "team", options: [option("Select", ""), option("Installation", "6")] },
+  ];
+  const shiftForm = {
+    getAttribute: (name) =>
+      ({ name: "shift", action: "index.php?action=view_shift", method: "POST" }[name] || null),
+    querySelectorAll: () => [],
+  };
+  const teamForm = {
+    getAttribute: (name) =>
+      ({ name: "team_change", action: "index.php?action=team_change", method: "POST" }[name] ||
+        null),
+    querySelectorAll: (selector) => pick(selector, [], selects),
+  };
+  return {
+    forms: [teamForm, shiftForm],
+    title: "S4",
+    documentElement: {
+      innerHTML:
+        `<a href="index.php?action=view_shift&amp;t=6&amp;y=2026&amp;m=10">Oct</a>` +
+        `<td onclick="window.open('${editUrl}')">shift</td>` +
+        `<a href="index.php?action=log">Log</a>`,
+    },
+    querySelectorAll: (selector) => pick(selector, inputs, selects),
+  };
+}
+
 function makeBrowser(tabs) {
   const store = {};
   const listeners = { background: [], content: [] };
@@ -184,27 +221,47 @@ function load(options = {}) {
 
   const bus = makeBrowser(options.tabs);
   const posted = [];
+  const fetched = [];
 
   const contentContext = {
     console,
     URL,
     URLSearchParams,
-    location: {
-      href: "https://s4.inhouse.net/index.php?action=view_shift&t=6",
-      origin: "https://s4.inhouse.net",
-    },
-    document: makeDocument(techIds, {
-      selects,
-      loose: options.loose,
-      noFields: options.noFields,
-    }),
+    // A real URL rather than a hand-made object: location.hostname was missing
+    // from the stub, so every discovered link looked cross-origin and was
+    // dropped — a gap in the fixture, invisible in the product.
+    location: new URL("https://s4.inhouse.net/index.php?action=view_shift&t=6"),
+    document: options.grid
+      ? makeGridDocument(options.grid)
+      : makeDocument(techIds, {
+          selects,
+          loose: options.loose,
+          noFields: options.noFields,
+        }),
     browser: bus.api("content"),
     setTimeout,
     async fetch(url, init) {
+      if (!init || !init.body) {
+        // a page read, not a post
+        const page = options.pages && options.pages[url];
+        fetched.push(url);
+        return { status: page ? 200 : 404, text: async () => page || "<html>Not found</html>" };
+      }
       const body = Object.fromEntries(new URLSearchParams(init.body));
       posted.push({ url, body });
       const reply = respond(body, posted.length);
       return { status: reply.status, text: async () => reply.text };
+    },
+    DOMParser: function DOMParserStub() {
+      return {
+        parseFromString(html) {
+          // The pages map hands back a ready-made document rather than html,
+          // so parsing is a lookup. Enough to exercise the fetch-and-read path.
+          return options.documents && options.documents[html]
+            ? options.documents[html]
+            : { forms: [], querySelectorAll: () => [] };
+        },
+      };
     },
   };
   contentContext.globalThis = contentContext;
@@ -225,6 +282,7 @@ function load(options = {}) {
 
   return {
     posted,
+    fetched,
     bus,
     // Values cross out of the VM, where they carry that context's prototypes and
     // compare unequal to identical host objects. Round-tripping them keeps the
@@ -271,4 +329,4 @@ function samplePlan(overrides = {}) {
   );
 }
 
-module.exports = { load, samplePlan, SLOT_LABELS };
+module.exports = { load, samplePlan, makeDocument, SLOT_LABELS };

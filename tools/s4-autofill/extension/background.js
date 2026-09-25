@@ -25,7 +25,7 @@ const DEFAULT_STATE = {
   // Writing is off until somebody deliberately turns it on. A dry run is
   // the common case and a mis-click on the live button would otherwise go
   // straight into a roster people are working to.
-  settings: { delayMs: 700, stopAfterFailures: 3, allowWrites: false },
+  settings: { delayMs: 700, stopAfterFailures: 3, allowWrites: false, editUrl: "" },
 };
 
 let state = JSON.parse(JSON.stringify(DEFAULT_STATE));
@@ -109,6 +109,25 @@ async function ask(message) {
  * rather than making somebody pick the right window, every open S4 tab is
  * probed and the one carrying the real form wins.
  */
+/** Has this page got everything a live run needs? */
+function isComplete(forms, plan) {
+  const matched = S4Mapping.matchOptions(forms, plan);
+  const fields = Object.assign(
+    S4Mapping.suggestFields(forms, plan.form_name || "shift"),
+    matched.fields
+  );
+  const missing = S4Mapping.missingMapping(
+    {
+      fields,
+      shiftTimeValues: matched.shiftTimeValues,
+      categoryValues: matched.categoryValues,
+      staffValues: matched.staffValues,
+    },
+    plan
+  );
+  return !missing.fields.length && !missing.slots.length && !missing.categories.length;
+}
+
 function scoreForms(forms, plan) {
   const matched = S4Mapping.matchOptions(forms, plan);
   const fields = S4Mapping.suggestFields(forms, plan.form_name || "shift");
@@ -246,17 +265,53 @@ const handlers = {
     const tabs = await s4Tabs();
     const looked = [];
     let best = null;
+    let host = null;
+    let candidates = [];
+
     for (const tab of tabs) {
-      let forms;
+      let reply;
       try {
-        ({ forms } = await askTab(tab.id, { type: "probe" }));
+        reply = await askTab(tab.id, { type: "probe" });
       } catch (error) {
         looked.push({ url: tab.url, note: "could not be read — reload it" });
         continue;
       }
-      const score = scoreForms(forms, state.plan);
+      const score = scoreForms(reply.forms, state.plan);
       looked.push({ url: tab.url, score });
-      if (!best || score > best.score) best = { score, forms, tab };
+      if (!best || score > best.score) best = { score, forms: reply.forms, tab, url: tab.url };
+      if (!host || score > 0) host = tab;
+      if (reply.candidates && reply.candidates.length) {
+        candidates = candidates.concat(reply.candidates);
+      }
+    }
+
+    // The month grid holds an empty <form name="shift"> and opens the editor in
+    // its own window, so what is on screen is usually not what we need. Read
+    // the pages the grid links to, and anything the person named by hand.
+    const manual = (state.settings.editUrl || "").trim();
+    const toRead = (manual ? [manual] : []).concat(
+      candidates.filter((url) => url !== manual)
+    );
+    if (host && toRead.length && (!best || !isComplete(best.forms, state.plan))) {
+      for (const url of toRead.slice(0, manual ? 9 : 8)) {
+        let reply;
+        try {
+          reply = await askTab(host.id, { type: "probeUrl", url });
+        } catch (error) {
+          looked.push({ url, note: "could not be fetched" });
+          continue;
+        }
+        if (!reply.ok) {
+          looked.push({ url, note: reply.detail || `HTTP ${reply.status}` });
+          continue;
+        }
+        const score = scoreForms(reply.forms, state.plan);
+        looked.push({ url, score, fetched: true });
+        if (!best || score > best.score) {
+          best = { score, forms: reply.forms, tab: host, url };
+        }
+        if (isComplete(reply.forms, state.plan)) break;
+      }
     }
     if (!best) {
       throw new Error(
@@ -266,9 +321,9 @@ const handlers = {
     }
     if (best.score === 0) {
       throw new Error(
-        "Found " + tabs.length + " S4 tab(s) but no shift form in any of them. Open the " +
-          "shift edit window — the one with Category, Shift Time and Duration on it — " +
-          "and probe again."
+        `Looked at ${looked.length} S4 page(s) and found no shift form. Open the shift ` +
+          "edit window — the one with Category, Shift Time and Duration on it — or paste " +
+          "its address into “editor page” below, then try again."
       );
     }
 
@@ -287,7 +342,7 @@ const handlers = {
       action: target ? target.action : "",
       probedAt: new Date().toISOString(),
       tabId: tab.id,
-      tabUrl: tab.url,
+      tabUrl: best.url || tab.url,
       looked,
       forms,
     };

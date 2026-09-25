@@ -36,21 +36,21 @@
    * a form with nothing in it. This sweeps up everything named that a real
    * form did not already claim.
    */
-  function looseFields() {
+  function looseFields(doc) {
     const claimed = new Set();
-    Array.from(document.forms).forEach((form) => {
+    Array.from(doc.forms).forEach((form) => {
       form.querySelectorAll("input, textarea, select").forEach((el) => claimed.add(el));
     });
     const inputs = [];
     const selects = [];
-    document.querySelectorAll("input[name], textarea[name]").forEach((el) => {
+    doc.querySelectorAll("input[name], textarea[name]").forEach((el) => {
       if (!claimed.has(el)) inputs.push(describeInput(el));
     });
-    document.querySelectorAll("select[name]").forEach((el) => {
+    doc.querySelectorAll("select[name]").forEach((el) => {
       if (!claimed.has(el)) selects.push(describeSelect(el));
     });
     if (!inputs.length && !selects.length) return null;
-    const form = Array.from(document.forms)[0];
+    const form = Array.from(doc.forms)[0];
     return {
       name: form ? form.getAttribute("name") || "" : "",
       action: form ? form.getAttribute("action") || "" : "",
@@ -61,9 +61,9 @@
     };
   }
 
-  /** Read every form on the page: field names and dropdown options. */
-  function probeForms() {
-    const forms = Array.from(document.forms).map((form) => ({
+  /** Read every form in a document: field names and dropdown options. */
+  function probeDocument(doc) {
+    const forms = Array.from(doc.forms).map((form) => ({
       name: form.getAttribute("name") || "",
       action: form.getAttribute("action") || "",
       method: (form.getAttribute("method") || "GET").toUpperCase(),
@@ -74,9 +74,58 @@
         .filter((el) => el.name)
         .map(describeSelect),
     }));
-    const loose = looseFields();
+    const loose = looseFields(doc);
     if (loose) forms.push(loose);
     return forms;
+  }
+
+  function probeForms() {
+    return probeDocument(document);
+  }
+
+  /**
+   * Where the shift editor might live.
+   *
+   * S4's month grid holds an empty <form name="shift"> and opens the real
+   * editor in a separate window, so the controls are simply not in the page
+   * somebody is looking at. Rather than asking them to go and find it, pull
+   * the candidate urls out of the grid's own markup and read those pages.
+   */
+  function candidateEditUrls(limit) {
+    const found = new Map();
+    const html = document.documentElement ? document.documentElement.innerHTML : "";
+    const pattern = /["'`]([^"'`\s]*index\.php\?[^"'`\s]*)["'`]/gi;
+    let match;
+    while ((match = pattern.exec(html)) !== null) {
+      const raw = match[1].replace(/&amp;/g, "&");
+      let url;
+      try {
+        url = new URL(raw, location.href);
+      } catch (error) {
+        continue;
+      }
+      if (url.hostname !== location.hostname) continue;
+      const text = url.href.toLowerCase();
+      // edit_co_shift is what the editor's own url carries; rank on that.
+      let rank = 3;
+      if (text.includes("edit_co_shift") || text.includes("edit_shift")) rank = 0;
+      else if (text.includes("edit")) rank = 1;
+      else if (text.includes("shift")) rank = 2;
+      else continue;
+      if (!found.has(url.href) || found.get(url.href) > rank) found.set(url.href, rank);
+    }
+    return [...found.entries()]
+      .sort((a, b) => a[1] - b[1] || a[0].length - b[0].length)
+      .slice(0, limit || 8)
+      .map(([href]) => href);
+  }
+
+  /** Fetch another S4 page with the current session and read its forms. */
+  async function probeUrl(url) {
+    const response = await fetch(url, { credentials: "same-origin" });
+    const html = await response.text();
+    const doc = new DOMParser().parseFromString(html, "text/html");
+    return { ok: response.status < 400, status: response.status, forms: probeDocument(doc) };
   }
 
   function postUrl(action) {
@@ -127,7 +176,17 @@
       case "ping":
         return Promise.resolve({ ok: true, url: location.href, title: document.title });
       case "probe":
-        return Promise.resolve({ ok: true, forms: probeForms() });
+        return Promise.resolve({
+          ok: true,
+          forms: probeForms(),
+          candidates: candidateEditUrls(message.limit),
+        });
+      case "probeUrl":
+        return probeUrl(message.url).catch((error) => ({
+          ok: false,
+          forms: [],
+          detail: `${error.name}: ${error.message}`,
+        }));
       case "post":
         return postOne(message.body, message.action).catch((error) => ({
           ok: false,
