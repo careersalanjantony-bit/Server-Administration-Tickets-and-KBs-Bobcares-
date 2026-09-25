@@ -49,6 +49,7 @@ input[type="number"] { width: 68px; font: inherit; padding: 3px; }
 .error { background: #FBE6E6; border: 1px solid var(--stop); color: var(--stop); padding: 6px 8px; border-radius: 3px; }
 .problems { margin: 6px 0 0; padding-left: 18px; color: var(--stop); }
 .problems:empty { display: none; }
+.problems .info { color: var(--muted); }
 .bar { height: 8px; background: #E4E4D8; border-radius: 4px; overflow: hidden; margin-top: 8px; }
 .bar > div { height: 100%; width: 0; background: var(--go); transition: width .15s linear; }
 table { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 12px; }

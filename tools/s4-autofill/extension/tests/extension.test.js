@@ -227,6 +227,50 @@ test("missingMapping names the slots it could not match", async () => {
   assert.deepStrictEqual([...missing.slots], ["ghost"]);
 });
 
+// Options S4's real change_shift form carried that no plan uses, as the
+// extension's own diagnostics reported them. The live button stayed off
+// because every one of these counted as a gap in the mapping.
+const S4_LEFTOVERS = {
+  cat: [
+    "Emergency HalfDay Casual Leave(0.5 ECL)", "HalfDay Casual Leave(HCL)",
+    "Maternity Leave(MA)", "Unauthorized Absence(UA)",
+  ],
+  shift_time: ["Select", "11:00am-07:00pm"],
+  members: ["Select"],
+  members_ecl: ["Select"],
+};
+
+test("options no plan uses do not hold the live run", async () => {
+  const { harness, state } = await ready();
+  const mapping = Object.assign({}, state.mapping, { unmatched: S4_LEFTOVERS });
+  const { blocking, info } = harness.S4Mapping.mappingProblems(mapping, samplePlan());
+  assert.deepStrictEqual([...blocking], []);
+  // Still listed, so nothing about the form is hidden — placeholders aside.
+  assert.strictEqual(info.length, 2);
+  assert.ok(info.some((line) => line.includes("Maternity Leave(MA)")));
+  assert.ok(info.some((line) => line.includes("11:00am-07:00pm")));
+  assert.ok(info.every((line) => !/Select/.test(line)));
+});
+
+test("a live run goes ahead with S4's leftover options in the mapping", async () => {
+  const { harness, state } = await ready();
+  state.mapping.unmatched = S4_LEFTOVERS;
+  const run = await harness.send("startRun", { dryRun: false });
+  assert.ok(!run.error, run.error);
+  assert.strictEqual(run.index, run.total);
+});
+
+test("something the plan needs still blocks, alongside the leftovers", async () => {
+  const { harness, state } = await ready();
+  const plan = samplePlan();
+  plan.assignments[0].category = "VJ";
+  const mapping = Object.assign({}, state.mapping, { unmatched: S4_LEFTOVERS });
+  const { blocking } = harness.S4Mapping.mappingProblems(mapping, plan);
+  assert.deepStrictEqual([...blocking], ["categories not matched: VJ"]);
+  const missing = harness.S4Mapping.missingMapping(mapping, plan);
+  assert.deepStrictEqual([...missing.categories], ["VJ"]);
+});
+
 // --------------------------------------------- finding the form on S4's pages
 // S4 splits this over two windows: the month grid carries an empty
 // <form name="shift"> with the controls rendered elsewhere in the document,
@@ -1689,13 +1733,15 @@ function fakeElement() {
     classList: { add() {}, remove() {}, toggle() {} },
     append(...items) { el.children.push(...items); },
     appendChild(item) { el.children.push(item); return item; },
-    addEventListener() {}, click() {}, remove() {},
+    listeners: {},
+    addEventListener(type, fn) { el.listeners[type] = fn; },
+    click() {}, remove() {},
   };
   el.tBodies = [{ textContent: "", appendChild(item) { el.children.push(item); return item; } }];
   return el;
 }
 
-function loadUi(state) {
+function loadUi(state, options = {}) {
   const vm = require("vm");
   const fs = require("fs");
   const path = require("path");
@@ -1714,7 +1760,7 @@ function loadUi(state) {
       },
     },
     navigator: { clipboard: { writeText: async () => {} } },
-    window: { confirm: () => false },
+    window: { confirm: options.confirm || (() => false) },
   };
   context.globalThis = context;
   vm.createContext(context);
@@ -2081,6 +2127,31 @@ test("a dry run says what each block would change", async () => {
   const ui = loadUi(state);
   ui.render(state);
   assert.match(ui.$("counts").textContent, /1 already in S4/);
+});
+
+test("coverage counts what already matches S4 and what would be replaced", async () => {
+  const { state } = await realS4();
+  const { unchanged, changing, changedDays } = state.mapping.coverage;
+  assert.deepStrictEqual({ unchanged, changing, changedDays }, { unchanged: 1, changing: 1, changedDays: 2 });
+});
+
+test("the live button, with S4's leftover options, is on and says what it overwrites", async () => {
+  const { harness } = await realS4();
+  const state = await harness.send("getState");
+  state.mapping.unmatched = S4_LEFTOVERS;
+  const asked = [];
+  const ui = loadUi(state, { confirm: (text) => (asked.push(text), false) });
+  ui.render(state);
+  assert.strictEqual(ui.$("live").disabled, false, ui.$("fillReason").textContent);
+  assert.doesNotMatch(ui.$("fillReason").textContent, /incomplete/);
+  const listed = ui.$("mapProblems").children;
+  assert.ok(listed.length > 0 && listed.every((li) => li.className === "info"));
+
+  await ui.$("live").listeners.click();
+  assert.strictEqual(asked.length, 1);
+  assert.match(asked[0], /1 block\(s\) replace what S4 shows now \(2 day\(s\) of the existing roster\)/);
+  assert.match(asked[0], /1 already match S4 and are left alone/);
+  assert.strictEqual(harness.posted.length, 0, "declining the confirmation sends nothing");
 });
 
 test("disabled controls, plain buttons and a second submit are not echoed", () => {

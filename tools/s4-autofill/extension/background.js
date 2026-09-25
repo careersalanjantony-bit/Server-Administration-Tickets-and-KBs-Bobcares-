@@ -393,16 +393,29 @@ function coverage(plan, mapping, grid) {
   );
   const payloads = payloadsFrom(plan);
   let resolved = 0;
+  let unchanged = 0;
+  let changedDays = 0;
   const examples = [];
   payloads.forEach((payload) => {
     const row = resolveRow(payload, mapping, index);
-    if (row.cell) resolved += 1;
-    else if (examples.length < 5) examples.push(row.error);
+    if (!row.cell) {
+      if (examples.length < 5) examples.push(row.error);
+      return;
+    }
+    resolved += 1;
+    const current = S4Mapping.compareBlock(payload, row.uid, index, mapping.categoryValues);
+    if (current.same) unchanged += 1;
+    else changedDays += current.differ.length;
   });
   return {
     total: payloads.length,
     resolved,
     missing: payloads.length - resolved,
+    // A month someone already filled by hand is overwritten by the rest, so
+    // the live run's confirmation has to say how much of it that is.
+    unchanged,
+    changing: resolved - unchanged,
+    changedDays,
     duplicates,
     examples,
   };

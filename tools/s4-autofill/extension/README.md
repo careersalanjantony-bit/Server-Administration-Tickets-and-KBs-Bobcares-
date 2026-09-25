@@ -266,9 +266,13 @@ It writes to a live roster, so:
   while a plan is loaded — it is the diagnostic, so gating it behind a working
   mapping would take it away exactly when it is needed.
 - **A disabled button always says why**, underneath the buttons.
-- **A live run is refused** while any field, shift time or category is
-  unmatched. It names what is missing rather than guessing.
-- **The live button asks for confirmation**, naming the month and the count.
+- **A live run is refused** while any field, or any shift time or category
+  the plan uses, is unmatched. It names what is missing rather than guessing.
+  Dropdown options the plan never uses — S4's `Select` entry, the
+  `11:00am-07:00pm` shift, half-day and maternity leave — are listed in grey
+  and do not block.
+- **The live button asks for confirmation**, naming the month, the count, how
+  many blocks would replace what S4 shows now, and how many already match it.
 - **It stops itself after 3 failures** — if the mapping or the session is
   wrong, it fails 3 times, not 530.
 - **Stop halts the run** between posts.
@@ -287,7 +291,7 @@ It writes to a live roster, so:
 node --test
 ```
 
-153 tests. They load the real `background.js` and `content/s4page.js` into a VM
+158 tests. They load the real `background.js` and `content/s4page.js` into a VM
 with a stand-in `browser` API and a form shaped like S4's, and cover the things
 that would actually corrupt a roster: that duration fields are never mistaken
 for the clock fields, that midnight and noon do not post as hour zero, that a

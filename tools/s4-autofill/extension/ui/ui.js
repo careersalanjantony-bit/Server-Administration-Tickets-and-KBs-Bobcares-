@@ -96,32 +96,26 @@ function listProblems(mapping, plan) {
   const list = $("mapProblems");
   list.textContent = "";
   if (!mapping || !plan) return true;
-  const missing = S4Mapping.missingMapping(mapping, plan);
-  const lines = [];
-  if (missing.fields.length) lines.push(`form fields not found: ${missing.fields.join(", ")}`);
-  if (missing.slots.length) lines.push(`shift times not matched: ${missing.slots.join(", ")}`);
-  if (missing.categories.length) lines.push(`categories not matched: ${missing.categories.join(", ")}`);
-  Object.entries(mapping.unmatched || {}).forEach(([name, options]) => {
-    if (options && options.length) {
-      lines.push(`dropdown "${name}" has options nothing matched: ${options.join(", ")}`);
-    }
-  });
-  // Worth knowing but not a reason to hold the run: a block with no row is
-  // skipped and listed, the rest still go in.
+  // Only what the plan needs holds the run — the same rule the background
+  // refuses on. The rest is listed so nothing about the form is hidden.
+  const { blocking, info } = S4Mapping.mappingProblems(mapping, plan);
   const coverage = mapping.coverage;
-  const notes = [];
   if (coverage && coverage.missing && rowsRead(mapping)) {
-    notes.push(
+    info.push(
       `${coverage.missing} block(s) have no calendar row in the grid and would be skipped` +
         (coverage.examples && coverage.examples.length ? ` — e.g. ${coverage.examples[0]}` : "")
     );
   }
-  lines.concat(notes).forEach((text) => {
-    const li = document.createElement("li");
-    li.textContent = text;
-    list.appendChild(li);
-  });
-  return lines.length === 0;
+  blocking.forEach((text) => addProblem(list, text, true));
+  info.forEach((text) => addProblem(list, text, false));
+  return blocking.length === 0;
+}
+
+function addProblem(list, text, blocks) {
+  const li = document.createElement("li");
+  li.textContent = text;
+  if (!blocks) li.className = "info";
+  list.appendChild(li);
 }
 
 function renderResults(run) {
@@ -409,11 +403,7 @@ $("delay").addEventListener("change", async (event) => {
 
 $("dryRun").addEventListener("click", async () => {
   await call("startRun", { dryRun: true });
-  // Shown so it is obvious which build is loaded — several have been handed
-// round and they are indistinguishable otherwise.
-$("build").textContent = "v" + browser.runtime.getManifest().version;
-
-refresh();
+  refresh();
 });
 
 $("live").addEventListener("click", async () => {
@@ -421,21 +411,26 @@ $("live").addEventListener("click", async () => {
   const count = state.plan.assignments.length;
   const month = state.plan.month || "this month";
   const coverage = state.mapping && state.mapping.coverage;
-  const skipping =
-    coverage && coverage.missing
-      ? `\n${coverage.missing} of them have no calendar row in the grid and will be skipped.`
-      : "";
+  const lines = [];
+  if (coverage && coverage.changing !== undefined) {
+    lines.push(
+      `${coverage.changing} block(s) replace what S4 shows now` +
+        (coverage.changedDays ? ` (${coverage.changedDays} day(s) of the existing roster)` : "") +
+        "."
+    );
+    if (coverage.unchanged) lines.push(`${coverage.unchanged} already match S4 and are left alone.`);
+  }
+  if (coverage && coverage.missing) {
+    lines.push(`${coverage.missing} have no calendar row in the grid and will be skipped.`);
+  }
   const confirmed = window.confirm(
-    `Write ${count} shift blocks into S4 for ${month}?${skipping}\n\n` +
-      "This changes the live roster. Run a dry run first if you have not."
+    `Write ${count} shift blocks into S4 for ${month}?\n` +
+      (lines.length ? `\n${lines.join("\n")}\n` : "") +
+      "\nThis changes the live roster. Run a dry run first if you have not."
   );
   if (!confirmed) return;
   await call("startRun", { dryRun: false });
-  // Shown so it is obvious which build is loaded — several have been handed
-// round and they are indistinguishable otherwise.
-$("build").textContent = "v" + browser.runtime.getManifest().version;
-
-refresh();
+  refresh();
 });
 
 $("testOne").addEventListener("click", async () => {

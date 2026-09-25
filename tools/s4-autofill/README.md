@@ -248,8 +248,8 @@ python3 -m s4autofill plan --month 2026-11    # writes out/2026-11/plan.json
 
 Load [`extension/`](extension/) via `about:debugging`, open S4, load
 `plan.json`, read the form, dry run, fill. It works the dropdown mapping out
-itself, refuses to post while anything is unmatched, stops after 3 failures and
-has a Stop button. See [`extension/README.md`](extension/README.md).
+itself, refuses to post while anything the plan needs is unmatched, stops after
+3 failures and has a Stop button. See [`extension/README.md`](extension/README.md).
 
 Each block is posted to its own calendar row: S4's `cal_id` is per person per
 day, and the extension reads it from the month grid and opens that row's editor
@@ -321,7 +321,7 @@ if there are errors.
 
 ```bash
 python3 -m pytest tests/ -q      # 111 tests, the planner
-cd extension && node --test      # 153 tests, the extension
+cd extension && node --test      # 158 tests, the extension
 ```
 
 ---

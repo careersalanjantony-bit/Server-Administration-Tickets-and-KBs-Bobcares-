@@ -596,8 +596,37 @@
     return { fields: missing, slots: unmappedSlots, categories: unmappedCategories };
   }
 
+  // "Select", "-- choose --" and the like: a dropdown's empty first entry.
+  const PLACEHOLDER = /^[\s\-–—.]*(select|choose|none)?[\s\-–—.]*$/i;
+
+  /**
+   * What stands between this mapping and a live run, and what is only worth
+   * knowing. Only something the plan needs blocks: S4's dropdowns always carry
+   * options no plan uses (a "Select" entry, a shift nobody is rostered on,
+   * half-day and maternity leave), and holding the run for those meant the
+   * live button could never turn on against the real form.
+   */
+  function mappingProblems(mapping, plan) {
+    const blocking = [];
+    const info = [];
+    if (!mapping || !plan) return { blocking, info };
+    const missing = missingMapping(mapping, plan);
+    if (missing.fields.length) blocking.push(`form fields not found: ${missing.fields.join(", ")}`);
+    if (missing.slots.length) blocking.push(`shift times not matched: ${missing.slots.join(", ")}`);
+    if (missing.categories.length) {
+      blocking.push(`categories not matched: ${missing.categories.join(", ")}`);
+    }
+    Object.entries(mapping.unmatched || {}).forEach(([name, options]) => {
+      const real = (options || []).filter((text) => !PLACEHOLDER.test(text || ""));
+      if (real.length) {
+        info.push(`not used by this plan, left alone — "${name}": ${real.join(", ")}`);
+      }
+    });
+    return { blocking, info };
+  }
+
   const api = {
-    timeKey, clean, matchOptions, suggestFields, buildBody, missingMapping,
+    timeKey, clean, matchOptions, suggestFields, buildBody, missingMapping, mappingProblems,
     splitDate, baseFieldsOf,
     KNOWN_POPUP_PARAMS, parseCallArgs, parseConcat, popupSignature, editorUrl,
     normaliseDate, indexCells, cellTime, blockDays, compareBlock, labelStart,
