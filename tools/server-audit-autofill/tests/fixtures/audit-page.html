@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Server Audit (mock)</title>
+    <style>
+      .modal { display: none; }
+      .modal.show { display: block; }
+      .rec-block { display: none; }
+      .rec-block.open { display: block; }
+    </style>
+  </head>
+  <body>
+    <!--SUCCESS_FLASH-->
+    <div class="page-content">
+      <div id="audit_add">
+        <!--MODALS-->
+      </div>
+    </div>
+
+    <script>
+      /*
+       * Stand-ins for the two behaviours of the real page that the content
+       * script depends on: Bootstrap's jQuery .modal('show'), and the handler
+       * that reveals the recommendation block when "Yes" is selected.
+       */
+      window.jQuery = window.$ = function (el) {
+        return {
+          modal: function (action) {
+            if (action === "show") {
+              el.classList.add("show");
+              el.style.display = "block";
+              el.removeAttribute("aria-hidden");
+            } else if (action === "hide") {
+              el.classList.remove("show");
+              el.style.display = "none";
+            }
+          }
+        };
+      };
+
+      document.addEventListener("change", function (ev) {
+        var input = ev.target;
+        if (!input.name || input.name.indexOf("recommendation-status") !== 0) return;
+        var modal = input.closest(".modal");
+        if (!modal) return;
+        var block = modal.querySelector('[id^="recommendation-div-"]');
+        if (block) block.classList.toggle("open", input.value === "1");
+      });
+
+      /* The real page does a full POST/redirect/GET on submit. If the content
+         script ever activates a submit control, this records it so the test
+         can fail loudly. */
+      window.__submitted = [];
+      document.addEventListener("click", function (ev) {
+        var btn = ev.target.closest('button[type="submit"], input[type="submit"]');
+        if (btn) {
+          ev.preventDefault();
+          window.__submitted.push(btn.closest(".modal").id);
+        }
+      });
+    </script>
+  </body>
+</html>
