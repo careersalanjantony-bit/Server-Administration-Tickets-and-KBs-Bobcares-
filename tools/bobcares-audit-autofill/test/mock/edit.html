@@ -1,0 +1,268 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Server Audit (mock edit page)</title>
+    <!--
+      Stand-in for portal.bobcares.com/bob_Portal/server-audit/<server>/edit/<audit>, used by test/e2e.test.js.
+      Query string:
+        variant=a  row grid, ul/li rows, one shared Bootstrap-style modal, status from classes (default)
+        variant=b  column grid, div rows, one modal per item, dot colour from inline style only
+        mode=reload  Submit "posts" and reloads the page (default)   mode=ajax  Submit updates the page in place
+        names=odd  every dialog offers "Option 1 / Option 2"
+      Each section words its options like the portal does (OPTIONS, ITEM_OPTIONS). The green option is
+      always the first one, whatever its wording.
+      State lives in localStorage.mockAudit; every submit is logged in localStorage.mockSubmissions.
+      The "Edit server details" button is a stray edit button outside the audit cards that must be ignored.
+    -->
+    <style>
+      body { font: 13px system-ui, sans-serif; margin: 0; background: #f4f6fb; color: #525f7f; }
+      nav.sidenav { position: fixed; left: 0; top: 0; bottom: 0; width: 180px; background: #fff; padding: 20px; }
+      nav.sidenav a { display: block; padding: 8px 0; color: #525f7f; }
+      .main { margin-left: 200px; padding: 20px; }
+      .alert-success { background: #d4edda; padding: 10px; margin-bottom: 10px; text-align: center; }
+      .row { display: flex; flex-wrap: wrap; margin: 0 -10px; }
+      .col { flex: 0 0 33.333%; max-width: 33.333%; padding: 0 10px; box-sizing: border-box; }
+      .card { background: #fff; margin-bottom: 20px; box-shadow: 0 1px 3px rgba(0,0,0,.15); }
+      .card-header { background: #0c71c3; color: #fff; padding: 12px 15px; font-weight: 600; }
+      ul.list-group { list-style: none; margin: 0; padding: 0; }
+      .list-group-item, .item-row { display: flex; align-items: center; gap: 10px; padding: 10px 15px; border-top: 1px solid #e9ecef; }
+      .lbl { flex: 1; }
+      .fa { display: inline-block; width: 14px; height: 14px; }
+      .fa-circle { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+      .text-success { color: #2dce89; } .text-warning { color: #fbcf33; } .text-danger { color: #f5365c; } .text-secondary { color: #8898aa; }
+      .btn { border: 0; border-radius: 4px; padding: 4px 6px; cursor: pointer; }
+      .btn-success { background: #1d5a2e; color: #fff; }
+      .fa-edit::before, .fa-pencil-square-o::before { content: '✎'; }
+      .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+      .modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.4); opacity: 0; transition: opacity .15s linear; }
+      .modal.show { opacity: 1; }
+      .modal-content { background: #fff; width: 560px; margin: 60px auto; padding: 0 0 10px; }
+      .modal-header { background: #0c71c3; color: #fff; padding: 12px 16px; display: flex; }
+      .modal-title { margin: 0; flex: 1; font-size: 15px; }
+      .modal-body { padding: 16px; }
+      .modal-footer { padding: 0 16px; }
+      textarea { width: 100%; height: 70px; }
+      .text-danger.err { display: block; margin-top: 6px; }
+    </style>
+  </head>
+  <body>
+    <nav class="sidenav"><a href="#">List Customers</a><a href="#">List Servers</a><a href="#"><i class="fa fa-edit"></i> Settings</a></nav>
+    <div class="main">
+      <div class="alert-success" id="flash" hidden>Success! Audit added successfully.</div>
+      <p>SERVER NAME: server-01.example.com · CONTROL PANEL: cPanel/WHM · MONTH: October 2026</p>
+      <div class="tools"><a href="#" class="btn btn-success" onclick="return false"><i class="fa fa-edit"></i> Edit server details</a></div>
+      <div id="grid"></div>
+    </div>
+    <div id="modals"></div>
+    <script>
+      const SECTIONS = [
+        ['Threat Protection', ['System Firewall', 'Malware Scanner', 'Failed Login Detection', 'Web App Firewall', 'Rootkit Scanner']],
+        ['Software Updates', ['Control Panel', 'Operating System', 'PHP', 'CMS', 'Web Server', 'Database Server', 'Other Softwares']],
+        ['Server Health', ['Server Uptime', 'HTTP Uptime', 'CPU Usage', 'RAM Usage', 'Disc Space Usage', 'Email Queue', 'IP Reputation']],
+        ['Backup', ['Local Backup', 'Remote Backup', 'Daily Backup', 'Weekly Backup', 'Monthly Backup', 'Recent Last Backup', 'Size Of Last Backup']],
+        ['Software Life Time', ['Control Panel', 'Operating System', 'CMS', 'Software Stack']],
+        ['Proactive Defence', ['/tmp Security', 'Reboot Procedure', 'IP RDNS', 'Malware Scan', 'Rootkit Check', 'SSH Root Access Security', 'PHP Functions Security', 'Root password health']],
+      ];
+      // Current month, Threat Protection done: G green, Y not done, N NA, R red.
+      const START = ['GGGGG', 'YYYYYYY', 'YYYYYYY', 'YYYYYYY', 'YYYY', 'YYYYYYYY'];
+      // Status options per section, green / red / NA (values 1 / 0 / 2).
+      const OPTIONS = [
+        ['Active', 'Inactive'],
+        ['All updates installed', 'Updates pending to install', 'NA'],
+        ['Good', 'Not Good', 'NA'],
+        ['Configured', 'Not configured', 'NA'],
+        ['Support Period Active', 'End Of Life Period', 'NA'],
+        ['Configured', 'Not Configured', 'NA'],
+      ];
+      // Items worded differently from the rest of their section.
+      const ITEM_OPTIONS = { 'Malware Scan': ['No Malwares', 'Malware Detected'], 'Rootkit Check': ['No rootkits', 'Rootkits found'] };
+      const VALUES = ['1', '0', '2'];
+      const STATE_OF = { 1: 'G', 0: 'R', 2: 'N' };
+
+      const q = new URLSearchParams(location.search);
+      const options = (s, i) => (q.get('names') === 'odd' ? ['Option 1', 'Option 2'] : ITEM_OPTIONS[SECTIONS[s][1][i]] || OPTIONS[s]);
+      const variant = q.get('variant') || 'a';
+      const mode = q.get('mode') || 'reload';
+      const state = JSON.parse(localStorage.getItem('mockAudit') || 'null') || START.map((s) => s.split(''));
+      const save = () => localStorage.setItem('mockAudit', JSON.stringify(state));
+      const logSubmit = (entry) => {
+        const all = JSON.parse(localStorage.getItem('mockSubmissions') || '[]');
+        all.push(entry);
+        localStorage.setItem('mockSubmissions', JSON.stringify(all));
+      };
+      if (sessionStorage.getItem('flash')) {
+        document.getElementById('flash').hidden = false;
+        sessionStorage.removeItem('flash');
+      }
+
+      const CLS = { G: 'text-success', Y: 'text-warning', R: 'text-danger', N: 'text-secondary' };
+      const COLOR = { G: '#2dce89', Y: '#fbcf33', R: '#f5365c', N: '#8898aa' };
+      const esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;');
+
+      function showModal(m) {
+        m.style.display = 'block';
+        requestAnimationFrame(() => requestAnimationFrame(() => m.classList.add('show')));
+      }
+      function hideModal(m) {
+        m.classList.remove('show');
+        setTimeout(() => (m.style.display = 'none'), 150);
+      }
+
+      function submitted(s, i, form, modal) {
+        const status = form.querySelector('input[name^="status"]:checked, input[name^="st_"]:checked');
+        if (!status) {
+          let err = form.querySelector('.err');
+          if (!err) {
+            err = document.createElement('span');
+            err.className = 'text-danger err';
+            form.querySelector('.modal-body').append(err);
+          }
+          err.textContent = 'Please choose a status.';
+          return;
+        }
+        const rec = form.querySelector('input[name^="rec"]:checked');
+        logSubmit({ s, i, status: status.value, rec: rec ? rec.value : null, details: form.querySelector('textarea').value });
+        state[s][i] = STATE_OF[status.value];
+        save();
+        if (mode === 'reload') {
+          sessionStorage.setItem('flash', '1');
+          setTimeout(() => location.reload(), 200);
+        } else {
+          setTimeout(() => {
+            hideModal(modal);
+            render();
+          }, 300);
+        }
+      }
+
+      // ---- variant a: row grid, list rows, one shared modal
+      function renderA() {
+        const grid = document.getElementById('grid');
+        grid.className = 'row';
+        grid.innerHTML = SECTIONS.map(
+          ([name, items], s) => `
+          <div class="col"><div class="card">
+            <div class="card-header">${esc(name)}</div>
+            <ul class="list-group">
+              ${items
+                .map(
+                  (label, i) => `<li class="list-group-item"><i class="fa fa-circle ${CLS[state[s][i]]}"></i>
+                  <span class="lbl">${esc(label)}</span>
+                  <button type="button" class="btn btn-sm btn-success" data-toggle="modal" data-target="#auditModal" data-s="${s}" data-i="${i}"><i class="fa fa-edit"></i></button></li>`
+                )
+                .join('')}
+            </ul></div></div>`
+        ).join('');
+      }
+
+      function setupA() {
+        document.getElementById('modals').innerHTML = `
+          <div class="modal fade" id="auditModal" tabindex="-1" role="dialog"><div class="modal-dialog"><div class="modal-content">
+            <form id="auditForm">
+              <div class="modal-header"><h5 class="modal-title" id="mTitle"></h5><button type="button" class="close" data-dismiss="modal">×</button></div>
+              <div class="modal-body">
+                <div class="form-group" id="statusGroup"></div>
+                <div class="form-group"><label>Additional details</label><textarea name="details"></textarea></div>
+                <div class="form-group">Any recommendations?
+                  <input type="radio" name="recommendation" value="0" id="rn"><label for="rn">No</label>
+                  <input type="radio" name="recommendation" value="1" id="ry"><label for="ry">Yes</label>
+                </div>
+              </div>
+              <div class="modal-footer"><button type="submit" class="btn btn-primary">Submit</button>
+                <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button></div>
+            </form></div></div></div>`;
+        const modal = document.getElementById('auditModal');
+        const form = document.getElementById('auditForm');
+        let cur = null;
+        document.addEventListener('click', (e) => {
+          const t = e.target.closest('[data-toggle="modal"]');
+          if (t) {
+            cur = [+t.dataset.s, +t.dataset.i];
+            const st = state[cur[0]][cur[1]];
+            document.getElementById('mTitle').textContent = SECTIONS[cur[0]][1][cur[1]];
+            form.reset();
+            const err = form.querySelector('.err');
+            if (err) err.remove();
+            document.getElementById('statusGroup').innerHTML = options(cur[0], cur[1])
+              .map(
+                (text, k) => `<span class="custom-control custom-radio"><input type="radio" id="st${k}" name="status" value="${VALUES[k]}"
+                  ${STATE_OF[VALUES[k]] === st ? 'checked' : ''}><label for="st${k}">${esc(text)}</label></span>`
+              )
+              .join('');
+            document.getElementById('rn').checked = true;
+            showModal(modal);
+          }
+          if (e.target.closest('[data-dismiss="modal"]')) hideModal(modal);
+        });
+        form.addEventListener('submit', (e) => {
+          e.preventDefault();
+          submitted(cur[0], cur[1], form, modal);
+        });
+      }
+
+      // ---- variant b: column grid, div rows, one modal per item, colour only in inline styles
+      function renderB() {
+        const grid = document.getElementById('grid');
+        grid.className = 'row';
+        const cols = [[0, 3], [1, 4], [2, 5]];
+        grid.innerHTML = cols
+          .map(
+            (pair) => `<div class="col">${pair
+              .map(
+                (s) => `<div class="card"><div class="card-header"><span>${esc(SECTIONS[s][0])}</span></div><div class="card-body">
+                ${SECTIONS[s][1]
+                  .map(
+                    (label, i) => `<div class="item-row"><span class="dot" style="background:${COLOR[state[s][i]]}"></span>
+                    <span class="lbl">${esc(label)}</span>
+                    <a href="javascript:void(0)" class="edit-link" onclick="openItem(${s}, ${i})" style="background:#1d5a2e;color:#fff;padding:3px 5px;border-radius:3px"><i class="fa fa-pencil-square-o"></i></a></div>`
+                  )
+                  .join('')}</div></div>`
+              )
+              .join('')}</div>`
+          )
+          .join('');
+        document.getElementById('modals').innerHTML = SECTIONS.flatMap(([, items], s) =>
+          items.map(
+            (label, i) => `<div class="modal fade" id="m_${s}_${i}" role="dialog"><div class="modal-content"><form>
+              <div class="modal-header"><h5 class="modal-title">${esc(label)}</h5><a href="#" class="close" data-dismiss="modal">×</a></div>
+              <div class="modal-body">
+                ${options(s, i)
+                  .map(
+                    (text, k) =>
+                      `<label><input type="radio" name="st_${s}_${i}" value="${VALUES[k]}" ${STATE_OF[VALUES[k]] === state[s][i] ? 'checked' : ''}> ${esc(text)}</label>`
+                  )
+                  .join('')}
+                <p>Additional details</p><textarea></textarea>
+                <div>Any recommendations? <label><input type="radio" name="rec_${s}_${i}" value="0" checked> No</label>
+                  <label><input type="radio" name="rec_${s}_${i}" value="1"> Yes</label></div>
+              </div>
+              <div class="modal-footer"><input type="submit" class="btn btn-info" value="Submit"> <button type="button" data-dismiss="modal">Cancel</button></div>
+            </form></div></div>`
+          )
+        ).join('');
+        document.querySelectorAll('#modals .modal').forEach((m) => {
+          const [, s, i] = m.id.split('_').map(Number);
+          m.querySelector('form').addEventListener('submit', (e) => {
+            e.preventDefault();
+            submitted(s, i, e.target, m);
+          });
+          m.addEventListener('click', (e) => {
+            if (e.target.closest('[data-dismiss="modal"]')) {
+              e.preventDefault();
+              hideModal(m);
+            }
+          });
+        });
+      }
+      window.openItem = (s, i) => showModal(document.getElementById('m_' + s + '_' + i));
+
+      function render() {
+        if (variant === 'b') renderB();
+        else renderA();
+      }
+      render();
+      if (variant !== 'b') setupA();
+    </script>
+  </body>
+</html>

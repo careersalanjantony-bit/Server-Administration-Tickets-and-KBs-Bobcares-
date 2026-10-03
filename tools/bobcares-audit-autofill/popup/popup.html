@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Audit Autofill</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <h1>Audit Autofill</h1>
+    <p id="state" class="muted">Checking this tab…</p>
+    <button id="open" class="primary" disabled>Open the panel on this page</button>
+    <ol class="muted small">
+      <li>Open the new audit (the edit page with the green edit buttons).</li>
+      <li>In the panel, drop / paste / choose a screenshot of the previous month's <b>View Server Audit</b> page.</li>
+      <li>Check the list: ticked items are the ones that were green ✓. Untick anything you don't want.</li>
+      <li>Press <b>Mark … items Active</b>. Everything that wasn't green is left as it is.</li>
+    </ol>
+    <script src="popup.js"></script>
+  </body>
+</html>

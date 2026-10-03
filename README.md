@@ -7,6 +7,7 @@ Each article documents: the symptoms observed, the diagnostic path taken, the co
 ## Tools
 
 - [Chamilo Quiz Autopilot](tools/chamilo-quiz-autopilot/) — Firefox extension that answers a Chamilo quiz from your own answer key (handles shuffled questions/options), clicks *Next question*, pauses when unsure, and asks for confirmation before *End test*.
+- [Bobcares Audit Autofill](tools/bobcares-audit-autofill/) — Firefox extension that fills in a new server audit from a screenshot of the previous one: every item that was green ✓ is marked *Active* again (dialog → Active → Submit), everything else is left as it is. Shows what it read for you to check first, and supports a dry run.
 
 ## Articles
 

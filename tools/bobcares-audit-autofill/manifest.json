@@ -1,0 +1,42 @@
+{
+  "manifest_version": 2,
+  "name": "Bobcares Audit Autofill",
+  "version": "1.3.0",
+  "description": "Fills in a Bobcares server audit from a screenshot of the previous audit: every item that was green (✓) is marked Active again, everything else is left alone.",
+  "icons": {
+    "48": "icons/icon.svg",
+    "96": "icons/icon.svg"
+  },
+  "permissions": [
+    "storage"
+  ],
+  "browser_action": {
+    "default_title": "Audit Autofill",
+    "default_popup": "popup/popup.html",
+    "default_icon": "icons/icon.svg"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "*://portal.bobcares.com/*"
+      ],
+      "js": [
+        "analyzer.js",
+        "page.js",
+        "content.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "bobcares-audit-autofill@local",
+      "strict_min_version": "140.0",
+      "data_collection_permissions": {
+        "required": [
+          "none"
+        ]
+      }
+    }
+  }
+}
