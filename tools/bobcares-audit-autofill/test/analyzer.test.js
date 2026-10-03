@@ -160,23 +160,43 @@ test('pixel classes', () => {
 const pageSections = (states) =>
   states.map((st, s) => ({ name: 'Section ' + (s + 1), items: [...st].map((c, i) => ({ label: 'Item ' + (s + 1) + '.' + (i + 1), state: c === 'G' ? 'green' : 'yellow' })) }));
 
-test('ticks the items that were green in the screenshot and are not green yet', () => {
+test('ticks the items that were green (or NA) in the screenshot and are not done yet', () => {
   const a = A.analyze(auditPage(REF, 'view'));
   const plan = A.matchToPage(a, pageSections(['GGGGG', 'GGGGGGG', 'YYYYYYY', 'GGGYGGG', 'GYYY', 'YYYYYYYY']));
-  assert.equal(plan.toMark, 12);
+  assert.equal(plan.toMark, 13);
   assert.deepEqual(plan.warnings, []);
-  const marked = plan.sections.map((s) => s.items.map((i) => (i.mark ? 'x' : '.')).join(''));
-  assert.deepEqual(marked, ['.....', '.......', 'xxxxxxx', '.......', '....', 'xxx.x.x.']);
+  const marked = plan.sections.map((s) => s.items.map((i) => (i.mark ? (i.target === 'na' ? 'n' : 'x') : '.')).join(''));
+  assert.deepEqual(marked, ['.....', '.......', 'xxxxxxx', '...n...', '....', 'xxx.x.x.']);
   assert.equal(plan.sections[0].items[0].note, 'already active');
-  // Weekly Backup was NA: not ticked even though it is "not done" on the page.
-  assert.equal(plan.sections[3].items[3].ref, 'na');
-  assert.equal(plan.sections[3].items[3].mark, false);
+  // Red rows are left alone.
+  assert.equal(plan.sections[4].items[1].ref, 'red');
+  assert.equal(plan.sections[4].items[1].target, null);
 });
 
-test('with skipDone off, already-green items are ticked too', () => {
+test('NA rows are left alone with markNA off, or when the page already shows them grey', () => {
+  const a = A.analyze(auditPage(REF, 'view'));
+  const page = pageSections(['GGGGG', 'GGGGGGG', 'GGGGGGG', 'GGGYGGG', 'GYYY', 'GGGYGYGY']);
+  assert.equal(A.matchToPage(a, page).toMark, 1);
+  assert.equal(A.matchToPage(a, page, { markNA: false }).toMark, 0);
+  page[3].items[3].state = 'grey';
+  const plan = A.matchToPage(a, page);
+  assert.equal(plan.toMark, 0);
+  assert.equal(plan.sections[3].items[3].note, 'already NA');
+});
+
+test('NA rows are not set to NA when too many rows read as NA (washed-out screenshot)', () => {
+  const a = A.analyze(auditPage(['NNNNN', 'GGGGGGG', 'NNNNNNN', 'GGGNGGG', 'GRRR', 'GGGRGRGR'], 'view'));
+  assert.equal(a.naDoubtful, true);
+  assert.match(a.warnings.join(' '), /so they are not set to NA/);
+  const plan = A.matchToPage(a, pageSections(['YYYYY', 'YYYYYYY', 'YYYYYYY', 'YYYYYYY', 'YYYY', 'YYYYYYYY']));
+  assert.ok(plan.sections.every((s) => s.items.every((i) => i.target !== 'na')));
+  assert.equal(plan.toMark, 7 + 6 + 1 + 5);
+});
+
+test('with skipDone off, already-done items are ticked too', () => {
   const a = A.analyze(auditPage(REF, 'view'));
   const plan = A.matchToPage(a, pageSections(REF), { skipDone: false });
-  assert.equal(plan.toMark, 31);
+  assert.equal(plan.toMark, 32);
 });
 
 test('a card whose row count differs is left alone and reported', () => {
@@ -186,7 +206,7 @@ test('a card whose row count differs is left alone and reported', () => {
   assert.ok(plan.sections[1].mismatch);
   assert.ok(plan.sections[1].items.every((i) => !i.mark));
   assert.match(plan.warnings.join('\n'), /"Section 2": the screenshot shows 7 row\(s\), the page has 8/);
-  assert.equal(plan.toMark, 5 + 7 + 6 + 1 + 5);
+  assert.equal(plan.toMark, 5 + 7 + 7 + 1 + 5);
 });
 
 test('sections missing from the screenshot are left alone', () => {

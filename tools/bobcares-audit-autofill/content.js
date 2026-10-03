@@ -18,7 +18,7 @@
   const A = globalThis.AuditAnalyzer;
   const P = globalThis.AuditPage;
 
-  const DEFAULT_SETTINGS = { delayMs: 800, skipDone: true, details: '' };
+  const DEFAULT_SETTINGS = { delayMs: 800, skipDone: true, markNA: true, details: '' };
   const STALE_JOB_MS = 2 * 60 * 60 * 1000;
   const STATUS_TEXT = { green: '✓', red: '✗', na: 'NA', yellow: 'not done', unknown: '?', missing: '—' };
   const STATUS_COLOR = { green: '#16a34a', red: '#dc2626', na: '#9ca3af', grey: '#9ca3af', yellow: '#f59e0b', unknown: '#7c3aed', missing: '#d1d5db' };
@@ -110,7 +110,7 @@
 
   function rescan() {
     scanPage();
-    plan = analysis ? A.matchToPage(analysis, page.sections, { skipDone: settings.skipDone }) : null;
+    plan = analysis ? A.matchToPage(analysis, page.sections, { skipDone: settings.skipDone, markNA: settings.markNA }) : null;
     ui.render();
   }
 
@@ -131,7 +131,7 @@
         const row = page.sections[si] && page.sections[si].items[ii] && page.sections[si].items[ii].row;
         if (!row || !it.mark) return;
         highlighted.push([row, row.style.outline, row.style.outlineOffset]);
-        row.style.outline = '3px solid #16a34a';
+        row.style.outline = '3px solid ' + (it.target === 'na' ? '#6b7280' : '#16a34a');
         row.style.outlineOffset = '-3px';
         n++;
       })
@@ -145,7 +145,8 @@
     const items = [];
     plan.sections.forEach((ps, s) =>
       ps.items.forEach((it, i) => {
-        if (it.mark) items.push({ s, i, label: it.label, section: ps.name });
+        // An item ticked by hand that had no ✓ / NA in the screenshot gets the green option.
+        if (it.mark) items.push({ s, i, label: it.label, section: ps.name, target: it.target || 'green' });
       })
     );
     return items;
@@ -192,8 +193,12 @@
   }
 
   function record(job, it, result, msg) {
-    job.results.push({ section: it.section, label: it.label, result, msg: msg || '' });
+    job.results.push({ section: it.section, label: it.label, target: it.target, result, msg: msg || '' });
   }
+
+  // The colour an item shows on the page once it is done, and how to say it.
+  const wanted = (it) => (it.target === 'na' ? 'grey' : 'green');
+  const notYet = (it) => ', but the item does not show ' + (it.target === 'na' ? 'grey (NA)' : 'green') + ' on the page yet';
 
   async function finishJob(job, how) {
     const lastRun = { path: job.path, finishedAt: Date.now(), how, dryRun: job.dryRun, results: job.results, total: job.items.length };
@@ -227,11 +232,12 @@
         if (!item) {
           result = 'failed';
           msg = 'not found on this page';
-        } else if (settings.skipDone && item.state === 'green' && !job.dryRun) {
+        } else if (settings.skipDone && item.state === wanted(it) && !job.dryRun) {
           result = 'skipped';
-          msg = 'already active';
+          msg = it.target === 'na' ? 'already NA' : 'already active';
         } else {
-          const res = await P.markGreen(item, {
+          const res = await P.markItem(item, {
+            target: it.target,
             details: settings.details,
             dryRun: job.dryRun,
             labels: labels(),
@@ -256,8 +262,8 @@
             await P.sleep(500);
             const again = P.locate(scanPage(), it);
             const state = again ? again.state : 'unknown';
-            result = state === 'green' || state === 'unknown' ? 'done' : 'check';
-            msg = result === 'done' ? res.msg : res.msg + ', but the item does not show green on the page yet';
+            result = state === wanted(it) || state === 'unknown' ? 'done' : 'check';
+            msg = result === 'done' ? res.msg : res.msg + notYet(it);
           }
         }
         const cur = await getJob();
@@ -296,8 +302,8 @@
         const hit = P.locate(scanPage(), it);
         if (hit) state = hit.state;
       }
-      const ok = state === 'green' || state === 'unknown';
-      record(job, it, ok ? 'done' : 'check', ok ? 'saved' : 'saved, but the item does not show green on the page yet');
+      const ok = state === wanted(it) || state === 'unknown';
+      record(job, it, ok ? 'done' : 'check', ok ? 'saved' : 'saved' + notYet(it));
       job.phase = 'idle';
       job.pos++;
       await saveJob(job);
@@ -428,7 +434,7 @@
               <canvas class="preview hidden" id="preview" title="Click to enlarge"></canvas>
               <p class="msg" id="refMsg"></p>
               <ul class="warn" id="warnings"></ul>
-              <h3>2. Items to mark Active on this page</h3>
+              <h3>2. Items to fill in on this page</h3>
               <div class="legend" id="legend"></div>
               <div id="plan"><p class="muted">Add the screenshot first.</p></div>
             </div>
@@ -441,7 +447,8 @@
               <summary>Settings</summary>
               <label class="field">Wait between items (ms)
                 <input type="number" id="setDelay" min="200" max="10000" step="100" /></label>
-              <label class="check"><input type="checkbox" id="setSkip" /> Skip items that are already green on this page</label>
+              <label class="check"><input type="checkbox" id="setNA" /> Set rows that are grey (NA) in the screenshot to NA</label>
+              <label class="check"><input type="checkbox" id="setSkip" /> Skip items that already show that colour on this page</label>
               <label class="field">Text for "Additional details" when it is empty (leave blank to not touch it)
                 <textarea id="setDetails" rows="2"></textarea></label>
             </details>
@@ -512,20 +519,24 @@
 
       $('#setDelay').value = settings.delayMs;
       $('#setSkip').checked = settings.skipDone;
+      $('#setNA').checked = settings.markNA;
       $('#setDetails').value = settings.details;
       const saveSettings = async () => {
         settings = {
           delayMs: Math.min(10000, Math.max(200, parseInt($('#setDelay').value, 10) || DEFAULT_SETTINGS.delayMs)),
           skipDone: $('#setSkip').checked,
+          markNA: $('#setNA').checked,
           details: $('#setDetails').value,
         };
         await api.storage.local.set({ settings });
       };
       ['#setDelay', '#setDetails'].forEach((s) => $(s).addEventListener('change', saveSettings));
-      $('#setSkip').addEventListener('change', async () => {
-        await saveSettings();
-        rescan();
-      });
+      ['#setSkip', '#setNA'].forEach((s) =>
+        $(s).addEventListener('change', async () => {
+          await saveSettings();
+          rescan();
+        })
+      );
 
       // Paste a screenshot straight from the clipboard while the panel is open.
       document.addEventListener(
@@ -683,7 +694,8 @@
         dot.style.background = STATUS_COLOR[it.state] || STATUS_COLOR.unknown;
         dot.title = 'On this page now: ' + it.state;
         label.append(cb, dot, el('span', '', it.label));
-        if (it.note) label.append(el('span', 'note', '(' + it.note + ')'));
+        const note = it.note || (it.target === 'na' ? 'set to NA' : '');
+        if (note) label.append(el('span', 'note', '(' + note + ')'));
         const chip = el('span', 'chip', STATUS_TEXT[it.ref] || '?');
         chip.style.background = STATUS_COLOR[it.ref] || STATUS_COLOR.unknown;
         chip.title = 'In the screenshot: ' + it.ref;
@@ -694,8 +706,11 @@
     }
 
     function updateButtons() {
-      const n = plan ? plan.sections.reduce((a, s) => a + s.items.filter((i) => i.mark).length, 0) : 0;
-      $('#apply').textContent = 'Mark ' + n + ' item' + (n === 1 ? '' : 's') + ' Active';
+      const ticked = plan ? plan.sections.flatMap((s) => s.items.filter((i) => i.mark)) : [];
+      const n = ticked.length;
+      const na = ticked.filter((i) => i.target === 'na').length;
+      $('#apply').textContent =
+        'Mark ' + n + ' item' + (n === 1 ? '' : 's') + (na ? ' (' + (n - na) + ' Active, ' + na + ' NA)' : ' Active');
       ['#apply', '#dry', '#hl'].forEach((s) => ($(s).disabled = running || !n));
       $('#rescan').disabled = running;
     }
@@ -757,10 +772,14 @@
       $('#back').classList.remove('hidden');
       $('#stop').classList.add('hidden');
       const n = (r) => run.results.filter((x) => x.result === r).length;
+      const doneNA = run.results.filter((x) => x.result === 'done' && x.target === 'na').length;
       const parts = [];
       if (run.dryRun) parts.push(n('dry-run') + ' checked (dry run, nothing saved)');
-      else parts.push(n('done') + ' marked Active');
-      if (n('skipped')) parts.push(n('skipped') + ' already active');
+      else {
+        parts.push(n('done') - doneNA + ' marked Active');
+        if (doneNA) parts.push(doneNA + ' marked NA');
+      }
+      if (n('skipped')) parts.push(n('skipped') + ' already done');
       if (n('check')) parts.push(n('check') + ' to check');
       if (n('failed')) parts.push(n('failed') + ' failed');
       status((run.how === 'stopped' ? 'Stopped. ' : 'Done. ') + parts.join(', ') + '.', n('failed') || n('check') ? 'warn' : 'ok');

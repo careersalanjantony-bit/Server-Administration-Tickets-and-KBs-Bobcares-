@@ -21,18 +21,20 @@ const DIR = path.join(__dirname, '..');
 const EDIT_URL = 'https://portal.bobcares.com/bob_Portal/server-audit/264/edit/12182';
 const VIEW_URL = 'https://portal.bobcares.com/bob_Portal/server/264/audits/11950';
 // Previous month (reference). The edit page starts with only Threat Protection done: GGGGG, YYYYYYY, YYYYYYY,
-// YYYNYYY, YYYY, YYYYYYYY (see START in test/mock/edit.html), and each section words its options differently.
+// YYYYYYY, YYYY, YYYYYYYY (see START in test/mock/edit.html), and each section words its options differently.
+// Weekly Backup is grey (NA) in the reference, so it is set to NA.
 const REF_STATES = 'GGGGG,GGGGGGG,GGGGGGG,GGGNGGG,GRRR,GGGRGRGR';
 const EXPECTED_TICKS = [
   'Control Panel', 'Operating System', 'PHP', 'CMS', 'Web Server', 'Database Server', 'Other Softwares',
   'Server Uptime', 'HTTP Uptime', 'CPU Usage', 'RAM Usage', 'Disc Space Usage', 'Email Queue', 'IP Reputation',
-  'Local Backup', 'Remote Backup', 'Daily Backup', 'Monthly Backup', 'Recent Last Backup', 'Size Of Last Backup',
+  'Local Backup', 'Remote Backup', 'Daily Backup', 'Weekly Backup', 'Monthly Backup', 'Recent Last Backup', 'Size Of Last Backup',
   'Control Panel',
   '/tmp Security', 'Reboot Procedure', 'IP RDNS', 'Rootkit Check', 'PHP Functions Security',
 ];
 const EXPECTED_END = ['GGGGG', 'GGGGGGG', 'GGGGGGG', 'GGGNGGG', 'GYYY', 'GGGYGYGY'];
-// The first option of each dialog is picked, whatever its wording.
-const PICKED = ['All updates installed', 'Good', 'Available', 'Support Period Active', 'Configured', 'No rootkits'];
+// The first option of each dialog is picked, whatever its wording; NA for the grey row.
+const PICKED = ['All updates installed', 'Good', 'Configured', 'NA', 'Support Period Active', 'No rootkits'];
+const isWeeklyBackup = (sub) => sub.s === 3 && sub.i === 3;
 
 // browser.storage / runtime stand-in, kept in the page's localStorage so it survives reloads like the real one.
 const STUB = `
@@ -141,17 +143,17 @@ test('end to end', { skip: !chromium && 'playwright is not installed' }, async (
       const page = await openEditPage(context, '?variant=' + variant + '&mode=' + mode);
       await page.locator('#file').setInputFiles(ref);
       assert.deepEqual(await ticked(page), EXPECTED_TICKS);
-      assert.equal(await page.locator('#apply').textContent(), 'Mark 26 items Active');
+      assert.equal(await page.locator('#apply').textContent(), 'Mark 27 items (26 Active, 1 NA)');
 
       await page.locator('#apply').click();
       const status = await waitForStatus(page, /^(Done|Stopped)/, 180000);
-      assert.match(status, /^Done\. 26 marked Active\.$/);
+      assert.match(status, /^Done\. 26 marked Active, 1 marked NA\.$/);
 
       const { state, submissions } = await pageState(page);
       assert.deepEqual(state.map((s) => s.join('')), EXPECTED_END);
-      assert.equal(submissions.length, 26);
+      assert.equal(submissions.length, 27);
       for (const sub of submissions) {
-        assert.equal(sub.status, '1', 'picked Active');
+        assert.equal(sub.status, isWeeklyBackup(sub) ? '2' : '1', isWeeklyBackup(sub) ? 'picked NA' : 'picked the first option');
         assert.equal(sub.rec, '0', 'recommendation left at No');
         assert.equal(sub.details, '', 'details left empty');
       }
@@ -167,7 +169,7 @@ test('end to end', { skip: !chromium && 'playwright is not installed' }, async (
     await ticked(page);
     await page.locator('#dry').click();
     const status = await waitForStatus(page, /^(Done|Stopped)/, 180000);
-    assert.match(status, /^Done\. 26 checked \(dry run, nothing saved\)\.$/);
+    assert.match(status, /^Done\. 27 checked \(dry run, nothing saved\)\.$/);
     const notes = await page.locator('#results td small').allTextContents();
     for (const name of PICKED) assert.ok(notes.some((n) => n.includes('would pick "' + name + '"')), 'picked ' + name);
     const { state, submissions } = await pageState(page);
@@ -190,7 +192,7 @@ test('end to end', { skip: !chromium && 'playwright is not installed' }, async (
     assert.match(status, /^Done\. 6 marked Active\.$/);
     assert.match(await page.locator('#results').textContent(), /picked "Option 1"/);
     const { state, submissions } = await pageState(page);
-    assert.deepEqual(state.map((s) => s.join('')), ['GGGGG', 'YYYYYYY', 'YYYYYYY', 'YYYNYYY', 'GYYY', 'GGGYGYGY']);
+    assert.deepEqual(state.map((s) => s.join('')), ['GGGGG', 'YYYYYYY', 'YYYYYYY', 'YYYYYYY', 'GYYY', 'GGGYGYGY']);
     assert.equal(submissions.length, 6);
     for (const sub of submissions) {
       assert.equal(sub.status, '1', 'first option');
@@ -215,7 +217,7 @@ test('end to end', { skip: !chromium && 'playwright is not installed' }, async (
     assert.equal(other.url(), VIEW_URL);
     assert.equal(await other.locator('.panel:not(.hidden)').count(), 0);
     await waitForStatus(page, /^(Done|Stopped)/, 180000);
-    assert.equal((await pageState(page)).submissions.length, 26);
+    assert.equal((await pageState(page)).submissions.length, 27);
     await context.close();
   });
 

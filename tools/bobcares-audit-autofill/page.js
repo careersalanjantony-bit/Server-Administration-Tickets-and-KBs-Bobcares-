@@ -3,8 +3,8 @@
  *
  * scan()      finds every audit item (a row with an edit button), groups the
  *             rows into section cards and returns them in reading order.
- * markGreen() opens one item's dialog, picks the first (green) option, and presses
- *             Submit. Nothing else in the dialog is touched (recommendations,
+ * markItem()  opens one item's dialog, picks the first (green) option or NA, and
+ *             presses Submit. Nothing else in the dialog is touched (recommendations,
  *             additional details), unless a default details text is set.
  *
  * The page's markup isn't hard-coded: items are found from their edit (pencil)
@@ -88,7 +88,7 @@
     const d = max - min;
     const v = max / 255;
     const s = max ? d / max : 0;
-    if (s < 0.2) return v >= 0.35 && v <= 0.85 ? 'grey' : null;
+    if (s < 0.25) return v >= 0.35 && v <= 0.85 ? 'grey' : null;
     let h;
     if (max === c.r) h = 60 * (((c.g - c.b) / d) % 6);
     else if (max === c.g) h = 60 * ((c.b - c.r) / d + 2);
@@ -292,11 +292,16 @@
     return false;
   }
 
-  // Pick the green option of the dialog's status question: always its FIRST
-  // option. Every section words it differently ("Active", "Good", "No Malwares",
-  // "All updates installed", …), but the green one always comes first.
+  const IS_NA = /^(n\/?a|not applicable)$/i;
+
+  // Pick the dialog's status option:
+  //   target 'green': always the FIRST option. Every item words it differently
+  //                   ("Active", "Good", "No Malwares", "All updates installed", …),
+  //                   but the green one always comes first.
+  //   target 'na':    the option called NA (or N/A, Not applicable).
   // The "Any recommendations?" question is never touched.
-  function chooseGreen(dialog) {
+  function chooseStatus(dialog, target) {
+    const pick = (options) => (target === 'na' ? options.find((o) => IS_NA.test(o.text) || IS_NA.test(o.value)) : options[0]);
     const radios = [...dialog.querySelectorAll('input[type=radio]')].filter((i) => !i.disabled);
     const groups = [];
     for (const input of radios) {
@@ -306,11 +311,12 @@
         g = { name, options: [] };
         groups.push(g);
       }
-      g.options.push({ input, text: optionText(input, dialog) });
+      g.options.push({ input, text: optionText(input, dialog), value: input.value });
     }
     const status = groups.find((g) => !isRecommendation(g, dialog));
     if (status) {
-      const opt = status.options[0];
+      const opt = pick(status.options);
+      if (!opt) return { ok: false, msg: 'no NA option in the dialog (found: ' + status.options.map((o) => o.text).join(', ') + ')' };
       if (!opt.input.checked) opt.input.click();
       if (!opt.input.checked) {
         opt.input.checked = true;
@@ -321,14 +327,15 @@
     }
     for (const sel of dialog.querySelectorAll('select')) {
       if (sel.disabled || /recomm/i.test(sel.name || '')) continue;
-      const opt = [...sel.options].find((o) => o.value !== '' && !o.disabled);
-      if (!opt) continue;
-      sel.value = opt.value;
+      const options = [...sel.options].filter((o) => o.value !== '' && !o.disabled).map((o) => ({ o, text: clean(o.text), value: o.value }));
+      const hit = pick(options);
+      if (!hit) continue;
+      sel.value = hit.value;
       sel.dispatchEvent(new Event('input', { bubbles: true }));
       sel.dispatchEvent(new Event('change', { bubbles: true }));
-      return { ok: true, picked: clean(opt.text) };
+      return { ok: true, picked: hit.text };
     }
-    return { ok: false, msg: 'no status options in the dialog' };
+    return { ok: false, msg: target === 'na' ? 'no NA option in the dialog' : 'no status options in the dialog' };
   }
 
   function fillDetails(dialog, text) {
@@ -372,13 +379,13 @@
   }
 
   /**
-   * Open the item's dialog, choose the green option and submit.
-   * opts: { details: string, dryRun: boolean, labels: Set<string> (all item labels, lower case),
+   * Open the item's dialog, choose the green option (target 'green') or NA (target 'na') and submit.
+   * opts: { target: 'green' | 'na', details: string, dryRun: boolean, labels: Set<string> (all item labels, lower case),
    *         beforeSubmit: async fn, return false to cancel instead of submitting }
    * Resolves { ok, msg }. When the form reloads the page, it never resolves:
    * the content script picks the job up again after the reload.
    */
-  async function markGreen(item, opts) {
+  async function markItem(item, opts) {
     // A Bootstrap modal left open (e.g. by a failed item) would block the next one.
     for (const m of openDialogs().filter((d) => d.matches('.modal'))) {
       closeDialog(m);
@@ -400,7 +407,7 @@
       return { ok: false, msg: 'the dialog that opened is for "' + clean(titleEl.innerText) + '", not "' + item.label + '"' };
     }
 
-    const pick = chooseGreen(dialog);
+    const pick = chooseStatus(dialog, opts.target || 'green');
     if (!pick.ok) {
       closeDialog(dialog);
       return pick;
@@ -434,6 +441,6 @@
     return { ok: true, msg: 'picked "' + pick.picked + '"' };
   }
 
-  const api = { HOST_ID, visible, waitFor, sleep, norm, colorName, scan, locate, openDialog, chooseGreen, markGreen, rowState };
+  const api = { HOST_ID, visible, waitFor, sleep, norm, colorName, scan, locate, openDialog, chooseStatus, markItem, rowState };
   root.AuditPage = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

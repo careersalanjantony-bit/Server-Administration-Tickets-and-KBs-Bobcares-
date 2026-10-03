@@ -314,8 +314,9 @@
 
   /**
    * @param {{width:number,height:number,data:Uint8ClampedArray}} img  RGBA pixels (ImageData)
-   * @returns {{width, height, mode, sections:[{box, rows:[{y0,y1,status,kind,icon}]}], warnings:string[]}}
+   * @returns {{width, height, mode, naDoubtful, sections:[{box, rows:[{y0,y1,status,kind,icon}]}], warnings:string[]}}
    *   box: the section's header bar; icon: where the row's status was read (for drawing the preview)
+   *   naDoubtful: so many rows read as NA that the screenshot is probably too compressed
    */
   function analyze(img) {
     const W = img.width;
@@ -364,9 +365,11 @@
     const unknown = all.filter((r) => r.status === 'unknown').length;
     if (unknown) warnings.push(unknown + ' row(s) have no readable status; they are left alone.');
     const na = all.filter((r) => r.status === 'na').length;
-    if (all.length >= 6 && na > all.length * 0.3) {
+    // Washed-out ✓ icons read as grey, so too many NA rows mean the NA reading can't be trusted.
+    const naDoubtful = all.length >= 6 && na > all.length * 0.3;
+    if (naDoubtful) {
       warnings.push(
-        'Many rows read as NA (grey). If the screenshot shows ✓ there, it is too compressed or too small: use a PNG screenshot (Firefox: right-click → Take Screenshot) at 50–100% zoom.'
+        'Many rows read as NA (grey), so they are not set to NA. If the screenshot shows ✓ there, it is too compressed or too small: use a PNG screenshot (Firefox: right-click → Take Screenshot) at 50–100% zoom.'
       );
     }
 
@@ -374,6 +377,7 @@
       width: W,
       height: H,
       mode,
+      naDoubtful,
       sections: sections.map((s) => ({
         box: s.box,
         rows: s.rows.map(({ y0, y1, status, kind, box }) => ({ y0, y1, status, kind, icon: { x0: box.x0, x1: box.x1, y0: box.y0, y1: box.y1 } })),
@@ -390,11 +394,13 @@
    *
    * @param analysis      result of analyze()
    * @param pageSections  [{ name, items: [{ label, state }] }]  (state: current colour on the page)
-   * @param opts          { skipDone: boolean }  leave items alone that are already green on the page
-   * @returns {{ sections: [{ name, refRows, mismatch, items: [{ label, state, ref, mark, note }] }], warnings: string[], toMark: number }}
+   * @param opts          { skipDone: boolean  leave items alone that already have that colour on the page,
+   *                        markNA: boolean    also mark grey (NA) rows as NA }
+   * @returns {{ sections: [{ name, refRows, mismatch, items: [{ label, state, ref, target, mark, note }] }], warnings: string[], toMark: number }}
+   *   target: what the item would be set to: 'green' (first option), 'na' (the NA option) or null
    */
   function matchToPage(analysis, pageSections, opts) {
-    const o = Object.assign({ skipDone: true }, opts);
+    const o = Object.assign({ skipDone: true, markNA: true }, opts);
     const ref = (analysis && analysis.sections) || [];
     const warnings = [];
     if (ref.length !== pageSections.length) {
@@ -415,14 +421,15 @@
       }
       const items = ps.items.map((it, i) => {
         const r = rs && rs.rows[i] ? rs.rows[i].status : 'missing';
-        let mark = r === 'green' && !mismatch;
+        const target = r === 'green' ? 'green' : r === 'na' && o.markNA && !analysis.naDoubtful ? 'na' : null;
+        let mark = !!target && !mismatch;
         let note = '';
-        if (mark && o.skipDone && it.state === 'green') {
+        if (mark && o.skipDone && it.state === (target === 'na' ? 'grey' : 'green')) {
           mark = false;
-          note = 'already active';
+          note = target === 'na' ? 'already NA' : 'already active';
         }
         if (mark) toMark++;
-        return { label: it.label, state: it.state || 'unknown', ref: r, mark, note };
+        return { label: it.label, state: it.state || 'unknown', ref: r, target, mark, note };
       });
       return { name: ps.name, refRows, mismatch, items };
     });

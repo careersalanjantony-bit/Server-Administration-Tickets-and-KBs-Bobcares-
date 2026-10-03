@@ -4,10 +4,10 @@ Fills in a new Bobcares server audit (`portal.bobcares.com/bob_Portal/server-aud
 
 1. You give it a screenshot of last month's **View Server Audit** page.
 2. It reads every row of every section: green ✓, red ✗, grey NA.
-3. It lists the items of the new audit with the ones that were **green ✓** ticked, so you can check them.
-4. For each ticked item it opens the edit dialog, picks the **first option** (the green one), and presses **Submit**.
+3. It lists the items of the new audit with the ones that were **green ✓** or **grey NA** ticked, so you can check them.
+4. For each ticked item it opens the edit dialog, picks the **first option** (the green one) for a ✓ row or **NA** for a grey row, and presses **Submit**.
 
-Everything that wasn't green (✗, NA, not done) is **left as it is**. In the dialog only the status choice is changed; *Additional details* and *Any recommendations?* are not touched.
+Everything that was red ✗ or not done is **left as it is**. In the dialog only the status choice is changed; *Additional details* and *Any recommendations?* are not touched.
 
 Every item words its options differently (*Active*, *All updates installed*, *Good*, *No Malwares*, *Support Period Active*, *Configured*, …), but the green option always comes first, so the extension always picks the first option, whatever it says.
 
@@ -34,9 +34,9 @@ Every item words its options differently (*Active*, *All updates installed*, *Go
 4. **Check the list.** The preview shows what was read: each section is outlined and numbered, and every icon has a ring in the colour it was read as (green ✓, red ✗, grey NA). Click the preview to enlarge it. Below it, each item of this page has:
    - a checkbox, ticked when the item was ✓ in the screenshot (untick anything you don't want, or use *all* / *none* per section)
    - a dot with its colour on this page now
-   - a chip with what the screenshot shows (✓ / ✗ / NA)
+   - a chip with what the screenshot shows (✓ / ✗ / NA); rows that will be set to NA say *(set to NA)*
 5. Optional: **Highlight** outlines the ticked rows on the page. **Dry run** opens each ticked item and picks the first option, then presses *Cancel*, so nothing is saved. Use it the first time to see that it works with your portal.
-6. Press **Mark N items Active**. The panel shows each item as it goes: *marked*, *skipped*, *check* or *failed*. **Stop** halts it after the current item.
+6. Press **Mark N items** (it shows how many get the green option and how many NA). The panel shows each item as it goes: *marked*, *skipped*, *check* or *failed*. **Stop** halts it after the current item.
 
 If Submit reloads the page, the run carries on by itself after the reload. If the portal sends you to a different page after saving, the extension goes back to the audit and continues.
 
@@ -51,9 +51,9 @@ No OCR and no internet. The screenshot is read inside your browser:
 Rows are matched to the page **by position**: 3rd row of the 2nd section → 3rd item of the 2nd section. The labels come from the page. Two safety checks:
 
 - If a section has a **different number of rows** in the screenshot than on the page, nothing in that section is ticked, and the panel says so. Tick items yourself if they are right.
-- Items that are **already green** on the page are not ticked (*already active*). You can turn this off in Settings.
+- Items that **already show that colour** on the page are not ticked (*already active*, *already NA*). You can turn this off in Settings.
 
-Any zoom level works. Heavily compressed JPEGs (for example, sent through a chat app) can wash out the small ✓ icons. They are then read as NA and left alone, and the panel warns you. Use a PNG screenshot.
+Any zoom level works. Heavily compressed JPEGs (for example, sent through a chat app) can wash out the small ✓ icons, which then read as NA. When that many rows read as NA, none of them is set to NA and the panel warns you. Use a PNG screenshot.
 
 ## Settings
 
@@ -62,7 +62,8 @@ In the panel, under **Settings** (saved for next time):
 | Setting | Default | What it does |
 |---|---|---|
 | Wait between items | 800 ms | Pause after each item. |
-| Skip items that are already green | on | Doesn't re-submit items that already show green on the page. |
+| Set rows that are grey (NA) in the screenshot to NA | on | Turn off to leave NA rows alone, as before. |
+| Skip items that already show that colour | on | Doesn't re-submit items that are already green (or grey, for NA) on the page. |
 | Text for "Additional details" | empty | Typed into *Additional details* only when that box is empty. Leave blank to never touch it. |
 
 ## If something doesn't work
