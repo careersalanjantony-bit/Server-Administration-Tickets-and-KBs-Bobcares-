@@ -4,7 +4,7 @@
  * Shows a panel on the audit edit page. You give it a screenshot of the
  * previous audit; it reads which items were green (✓), lists them against the
  * items on this page for you to check, and then marks those items Active one
- * by one (open dialog → Active → Submit). Everything else is left as it is.
+ * by one (open dialog → first option → Submit). Everything else is left as it is.
  *
  * The run is stored in browser.storage, so it carries on when Submit reloads
  * the page.
@@ -18,7 +18,7 @@
   const A = globalThis.AuditAnalyzer;
   const P = globalThis.AuditPage;
 
-  const DEFAULT_SETTINGS = { keywords: '', delayMs: 800, skipDone: true, details: '' };
+  const DEFAULT_SETTINGS = { delayMs: 800, skipDone: true, details: '' };
   const STALE_JOB_MS = 2 * 60 * 60 * 1000;
   const STATUS_TEXT = { green: '✓', red: '✗', na: 'NA', yellow: 'not done', unknown: '?', missing: '—' };
   const STATUS_COLOR = { green: '#16a34a', red: '#dc2626', na: '#9ca3af', grey: '#9ca3af', yellow: '#f59e0b', unknown: '#7c3aed', missing: '#d1d5db' };
@@ -63,11 +63,6 @@
       // no sessionStorage: the run still works in this tab
     }
   };
-  const keywords = () =>
-    settings.keywords
-      .split(/[,\n]/)
-      .map((k) => k.trim())
-      .filter(Boolean);
 
   // ------------------------------------------------------------- reference screenshot
 
@@ -237,7 +232,6 @@
           msg = 'already active';
         } else {
           const res = await P.markGreen(item, {
-            keywords: keywords(),
             details: settings.details,
             dryRun: job.dryRun,
             labels: labels(),
@@ -445,9 +439,6 @@
             </div>
             <details id="settingsBox">
               <summary>Settings</summary>
-              <label class="field">Other names for the green option in the item dialog (comma separated). Already known:
-                Active, Enabled, All updates installed, Good, Support Period Active, Configured.
-                <input type="text" id="setKeywords" /></label>
               <label class="field">Wait between items (ms)
                 <input type="number" id="setDelay" min="200" max="10000" step="100" /></label>
               <label class="check"><input type="checkbox" id="setSkip" /> Skip items that are already green on this page</label>
@@ -457,7 +448,7 @@
           </div>
           <div class="actions">
             <button class="primary" id="apply" disabled>Mark items Active</button>
-            <button id="dry" disabled title="Opens each item, picks Active, then presses Cancel">Dry run</button>
+            <button id="dry" disabled title="Opens each item, picks the first (green) option, then presses Cancel">Dry run</button>
             <button id="hl" disabled>Highlight</button>
             <button id="rescan" title="Read this page's items again">Rescan page</button>
             <button class="danger hidden" id="stop">Stop</button>
@@ -519,20 +510,18 @@
         rescan();
       });
 
-      $('#setKeywords').value = settings.keywords;
       $('#setDelay').value = settings.delayMs;
       $('#setSkip').checked = settings.skipDone;
       $('#setDetails').value = settings.details;
       const saveSettings = async () => {
         settings = {
-          keywords: $('#setKeywords').value.trim(),
           delayMs: Math.min(10000, Math.max(200, parseInt($('#setDelay').value, 10) || DEFAULT_SETTINGS.delayMs)),
           skipDone: $('#setSkip').checked,
           details: $('#setDetails').value,
         };
         await api.storage.local.set({ settings });
       };
-      ['#setKeywords', '#setDelay', '#setDetails'].forEach((s) => $(s).addEventListener('change', saveSettings));
+      ['#setDelay', '#setDetails'].forEach((s) => $(s).addEventListener('change', saveSettings));
       $('#setSkip').addEventListener('change', async () => {
         await saveSettings();
         rescan();

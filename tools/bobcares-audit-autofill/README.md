@@ -5,21 +5,11 @@ Fills in a new Bobcares server audit (`portal.bobcares.com/bob_Portal/server-aud
 1. You give it a screenshot of last month's **View Server Audit** page.
 2. It reads every row of every section: green ✓, red ✗, grey NA.
 3. It lists the items of the new audit with the ones that were **green ✓** ticked, so you can check them.
-4. For each ticked item it opens the edit dialog, picks the **green option**, and presses **Submit**.
+4. For each ticked item it opens the edit dialog, picks the **first option** (the green one), and presses **Submit**.
 
 Everything that wasn't green (✗, NA, not done) is **left as it is**. In the dialog only the status choice is changed; *Additional details* and *Any recommendations?* are not touched.
 
-The green option is worded differently in each section, and the extension knows these:
-
-| Section | Green option |
-|---|---|
-| Threat Protection | Active |
-| Software Updates | All updates installed |
-| Server Health | Good |
-| Software Life Time | Support Period Active |
-| Proactive Defence | Configured |
-
-For a dialog with none of these names (Backup, for example) it picks the **first** option, but only when another option in that dialog is plainly the red one (it says *Not …*, *pending*, *End Of Life*, *Inactive*, …). Otherwise the item fails and is left unchanged.
+Every item words its options differently (*Active*, *All updates installed*, *Good*, *No Malwares*, *Support Period Active*, *Configured*, …), but the green option always comes first, so the extension always picks the first option, whatever it says.
 
 ## Install (Firefox)
 
@@ -45,7 +35,7 @@ For a dialog with none of these names (Backup, for example) it picks the **first
    - a checkbox, ticked when the item was ✓ in the screenshot (untick anything you don't want, or use *all* / *none* per section)
    - a dot with its colour on this page now
    - a chip with what the screenshot shows (✓ / ✗ / NA)
-5. Optional: **Highlight** outlines the ticked rows on the page. **Dry run** opens each ticked item and picks Active, then presses *Cancel*, so nothing is saved. Use it the first time to see that it works with your portal.
+5. Optional: **Highlight** outlines the ticked rows on the page. **Dry run** opens each ticked item and picks the first option, then presses *Cancel*, so nothing is saved. Use it the first time to see that it works with your portal.
 6. Press **Mark N items Active**. The panel shows each item as it goes: *marked*, *skipped*, *check* or *failed*. **Stop** halts it after the current item.
 
 If Submit reloads the page, the run carries on by itself after the reload. If the portal sends you to a different page after saving, the extension goes back to the audit and continues.
@@ -71,7 +61,6 @@ In the panel, under **Settings** (saved for next time):
 
 | Setting | Default | What it does |
 |---|---|---|
-| Other names for the green option | empty | Extra names to pick, on top of the ones listed above. Only needed if an item fails with *could not tell which option is the green one*. |
 | Wait between items | 800 ms | Pause after each item. |
 | Skip items that are already green | on | Doesn't re-submit items that already show green on the page. |
 | Text for "Additional details" | empty | Typed into *Additional details* only when that box is empty. Leave blank to never touch it. |
@@ -80,7 +69,6 @@ In the panel, under **Settings** (saved for next time):
 
 - **"No audit items found on this page"**: open the audit *edit* page (the one with the edit buttons), wait for it to load, then press **Rescan page**.
 - **A section shows a row-count mismatch**: the screenshot may be cut off or overlapped (a tooltip over the icons, for example). Take it again with all cards fully visible.
-- **"could not tell which option is the green one (found: …)"**: add the green option's name from the *found:* list to *Other names for the green option* in Settings.
 - **"the dialog stayed open after Submit"**: the portal rejected the form, and its message is shown. The dialog is closed and the run moves on to the next item.
 
 ## Files

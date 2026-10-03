@@ -31,8 +31,8 @@ const EXPECTED_TICKS = [
   '/tmp Security', 'Reboot Procedure', 'IP RDNS', 'Rootkit Check', 'PHP Functions Security',
 ];
 const EXPECTED_END = ['GGGGG', 'GGGGGGG', 'GGGGGGG', 'GGGNGGG', 'GYYY', 'GGGYGYGY'];
-// The option picked in each section (Backup: not a known name, picked as the first of a green / red pair).
-const PICKED = ['Active', 'All updates installed', 'Good', 'Available', 'Support Period Active', 'Configured'];
+// The first option of each dialog is picked, whatever its wording.
+const PICKED = ['All updates installed', 'Good', 'Available', 'Support Period Active', 'Configured', 'No rootkits'];
 
 // browser.storage / runtime stand-in, kept in the page's localStorage so it survives reloads like the real one.
 const STUB = `
@@ -169,14 +169,14 @@ test('end to end', { skip: !chromium && 'playwright is not installed' }, async (
     const status = await waitForStatus(page, /^(Done|Stopped)/, 180000);
     assert.match(status, /^Done\. 26 checked \(dry run, nothing saved\)\.$/);
     const notes = await page.locator('#results td small').allTextContents();
-    for (const name of PICKED.slice(1)) assert.ok(notes.some((n) => n.includes('would pick "' + name + '"')), 'picked ' + name);
+    for (const name of PICKED) assert.ok(notes.some((n) => n.includes('would pick "' + name + '"')), 'picked ' + name);
     const { state, submissions } = await pageState(page);
     assert.equal(state, null);
     assert.equal(submissions.length, 0);
     await context.close();
   });
 
-  await t.test('unticked items, and dialogs whose green option is unclear, are left alone', async () => {
+  await t.test('the first option is picked whatever its wording, and unticked items are left alone', async () => {
     const context = await newContext(browser);
     const ref = await referenceImage(context);
     const page = await openEditPage(context, '?variant=a&mode=ajax&names=odd', { details: 'Checked, all fine.' });
@@ -187,13 +187,16 @@ test('end to end', { skip: !chromium && 'playwright is not installed' }, async (
     assert.equal(await page.locator('#apply').textContent(), 'Mark 6 items Active');
     await page.locator('#apply').click();
     const status = await waitForStatus(page, /^(Done|Stopped)/, 60000);
-    assert.match(status, /6 failed/);
-    const fails = await page.locator('#results td.r.failed').count();
-    assert.equal(fails, 6);
-    assert.match(await page.locator('#results').textContent(), /could not tell which option is the green one \(found: Option 1, Option 2\)/);
+    assert.match(status, /^Done\. 6 marked Active\.$/);
+    assert.match(await page.locator('#results').textContent(), /picked "Option 1"/);
     const { state, submissions } = await pageState(page);
-    assert.equal(state, null);
-    assert.equal(submissions.length, 0);
+    assert.deepEqual(state.map((s) => s.join('')), ['GGGGG', 'YYYYYYY', 'YYYYYYY', 'YYYNYYY', 'GYYY', 'GGGYGYGY']);
+    assert.equal(submissions.length, 6);
+    for (const sub of submissions) {
+      assert.equal(sub.status, '1', 'first option');
+      assert.equal(sub.rec, '0', 'recommendation left at No');
+      assert.equal(sub.details, 'Checked, all fine.', 'empty details filled from the setting');
+    }
     await context.close();
   });
 

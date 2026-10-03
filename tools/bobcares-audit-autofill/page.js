@@ -3,7 +3,7 @@
  *
  * scan()      finds every audit item (a row with an edit button), groups the
  *             rows into section cards and returns them in reading order.
- * markGreen() opens one item's dialog, picks the "Active" option, and presses
+ * markGreen() opens one item's dialog, picks the first (green) option, and presses
  *             Submit. Nothing else in the dialog is touched (recommendations,
  *             additional details), unless a default details text is set.
  *
@@ -292,28 +292,11 @@
     return false;
   }
 
-  function keywordMatcher(keywords) {
-    const res = keywords.map((k) => new RegExp('^' + k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b', 'i'));
-    return (text) => res.some((re) => re.test(clean(text)));
-  }
-
-  // The green option of each section's dialog, as worded on the portal.
-  const GREEN_NAMES = ['Active', 'Enabled', 'All updates installed', 'Good', 'Support Period Active', 'Configured'];
-  const NEGATIVE = /\b(not|no|non|inactive|disabled?|pending|end of life|eol|expired|outdated|failed|bad|missing|none|never)\b/i;
-  const IS_NA = /^(n\/?a|not applicable)$/i;
-
-  // Not on the list: the dialogs put the green option first ("Good / Not Good / NA"),
-  // so take the first option, but only when another option is plainly the red one.
-  function firstPositive(options) {
-    const first = options[0];
-    if (!first || NEGATIVE.test(first.text) || IS_NA.test(first.text)) return null;
-    return options.slice(1).some((o) => NEGATIVE.test(o.text)) ? first : null;
-  }
-
-  // Pick the green option of the dialog's status question.
-  // extraNames: more names for the green option, from the settings.
-  function chooseGreen(dialog, extraNames) {
-    const isGreen = keywordMatcher([...(extraNames || []), ...GREEN_NAMES]);
+  // Pick the green option of the dialog's status question: always its FIRST
+  // option. Every section words it differently ("Active", "Good", "No Malwares",
+  // "All updates installed", …), but the green one always comes first.
+  // The "Any recommendations?" question is never touched.
+  function chooseGreen(dialog) {
     const radios = [...dialog.querySelectorAll('input[type=radio]')].filter((i) => !i.disabled);
     const groups = [];
     for (const input of radios) {
@@ -325,10 +308,9 @@
       }
       g.options.push({ input, text: optionText(input, dialog) });
     }
-    const status = groups.filter((g) => !isRecommendation(g, dialog));
-    for (const g of status) {
-      const opt = g.options.find((o) => isGreen(o.text)) || g.options.find((o) => isGreen(o.input.value)) || firstPositive(g.options);
-      if (!opt) continue;
+    const status = groups.find((g) => !isRecommendation(g, dialog));
+    if (status) {
+      const opt = status.options[0];
       if (!opt.input.checked) opt.input.click();
       if (!opt.input.checked) {
         opt.input.checked = true;
@@ -339,22 +321,14 @@
     }
     for (const sel of dialog.querySelectorAll('select')) {
       if (sel.disabled || /recomm/i.test(sel.name || '')) continue;
-      const opts = [...sel.options].filter((o) => o.value !== '' && !o.disabled).map((o) => ({ o, text: clean(o.text) }));
-      const hit = opts.find((x) => isGreen(x.text) || isGreen(x.o.value)) || firstPositive(opts);
-      const opt = hit && hit.o;
+      const opt = [...sel.options].find((o) => o.value !== '' && !o.disabled);
       if (!opt) continue;
       sel.value = opt.value;
       sel.dispatchEvent(new Event('input', { bubbles: true }));
       sel.dispatchEvent(new Event('change', { bubbles: true }));
       return { ok: true, picked: clean(opt.text) };
     }
-    const seen = status.flatMap((g) => g.options.map((o) => o.text)).filter(Boolean);
-    return {
-      ok: false,
-      msg: seen.length
-        ? 'could not tell which option is the green one (found: ' + seen.join(', ') + '). Add its name in Settings.'
-        : 'no status options in the dialog',
-    };
+    return { ok: false, msg: 'no status options in the dialog' };
   }
 
   function fillDetails(dialog, text) {
@@ -399,7 +373,7 @@
 
   /**
    * Open the item's dialog, choose the green option and submit.
-   * opts: { keywords: string[] (extra names for the green option), details: string, dryRun: boolean, labels: Set<string> (all item labels, lower case),
+   * opts: { details: string, dryRun: boolean, labels: Set<string> (all item labels, lower case),
    *         beforeSubmit: async fn, return false to cancel instead of submitting }
    * Resolves { ok, msg }. When the form reloads the page, it never resolves:
    * the content script picks the job up again after the reload.
@@ -426,7 +400,7 @@
       return { ok: false, msg: 'the dialog that opened is for "' + clean(titleEl.innerText) + '", not "' + item.label + '"' };
     }
 
-    const pick = chooseGreen(dialog, opts.keywords);
+    const pick = chooseGreen(dialog);
     if (!pick.ok) {
       closeDialog(dialog);
       return pick;
