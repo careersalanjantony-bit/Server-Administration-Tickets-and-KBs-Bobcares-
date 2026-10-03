@@ -18,7 +18,7 @@
   const A = globalThis.AuditAnalyzer;
   const P = globalThis.AuditPage;
 
-  const DEFAULT_SETTINGS = { keywords: 'Active, Enabled', delayMs: 800, skipDone: true, details: '' };
+  const DEFAULT_SETTINGS = { keywords: '', delayMs: 800, skipDone: true, details: '' };
   const STALE_JOB_MS = 2 * 60 * 60 * 1000;
   const STATUS_TEXT = { green: '✓', red: '✗', na: 'NA', yellow: 'not done', unknown: '?', missing: '—' };
   const STATUS_COLOR = { green: '#16a34a', red: '#dc2626', na: '#9ca3af', grey: '#9ca3af', yellow: '#f59e0b', unknown: '#7c3aed', missing: '#d1d5db' };
@@ -445,7 +445,8 @@
             </div>
             <details id="settingsBox">
               <summary>Settings</summary>
-              <label class="field">Names of the green option in the item dialog (comma separated)
+              <label class="field">Other names for the green option in the item dialog (comma separated). Already known:
+                Active, Enabled, All updates installed, Good, Support Period Active, Configured.
                 <input type="text" id="setKeywords" /></label>
               <label class="field">Wait between items (ms)
                 <input type="number" id="setDelay" min="200" max="10000" step="100" /></label>
@@ -524,7 +525,7 @@
       $('#setDetails').value = settings.details;
       const saveSettings = async () => {
         settings = {
-          keywords: $('#setKeywords').value.trim() || DEFAULT_SETTINGS.keywords,
+          keywords: $('#setKeywords').value.trim(),
           delayMs: Math.min(10000, Math.max(200, parseInt($('#setDelay').value, 10) || DEFAULT_SETTINGS.delayMs)),
           skipDone: $('#setSkip').checked,
           details: $('#setDetails').value,

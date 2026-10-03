@@ -5,9 +5,21 @@ Fills in a new Bobcares server audit (`portal.bobcares.com/bob_Portal/server-aud
 1. You give it a screenshot of last month's **View Server Audit** page.
 2. It reads every row of every section: green ✓, red ✗, grey NA.
 3. It lists the items of the new audit with the ones that were **green ✓** ticked, so you can check them.
-4. For each ticked item it opens the edit dialog, picks **Active**, and presses **Submit**.
+4. For each ticked item it opens the edit dialog, picks the **green option**, and presses **Submit**.
 
-Everything that wasn't green (✗, NA, not done) is **left as it is**. In the dialog only the Active/Inactive choice is changed; *Additional details* and *Any recommendations?* are not touched.
+Everything that wasn't green (✗, NA, not done) is **left as it is**. In the dialog only the status choice is changed; *Additional details* and *Any recommendations?* are not touched.
+
+The green option is worded differently in each section, and the extension knows these:
+
+| Section | Green option |
+|---|---|
+| Threat Protection | Active |
+| Software Updates | All updates installed |
+| Server Health | Good |
+| Software Life Time | Support Period Active |
+| Proactive Defence | Configured |
+
+For a dialog with none of these names (Backup, for example) it picks the **first** option, but only when another option in that dialog is plainly the red one (it says *Not …*, *pending*, *End Of Life*, *Inactive*, …). Otherwise the item fails and is left unchanged.
 
 ## Install (Firefox)
 
@@ -59,7 +71,7 @@ In the panel, under **Settings** (saved for next time):
 
 | Setting | Default | What it does |
 |---|---|---|
-| Names of the green option | `Active, Enabled` | The dialog option that is picked. If your dialog says something else, add it here. An item whose dialog has none of these names fails and is left unchanged. |
+| Other names for the green option | empty | Extra names to pick, on top of the ones listed above. Only needed if an item fails with *could not tell which option is the green one*. |
 | Wait between items | 800 ms | Pause after each item. |
 | Skip items that are already green | on | Doesn't re-submit items that already show green on the page. |
 | Text for "Additional details" | empty | Typed into *Additional details* only when that box is empty. Leave blank to never touch it. |
@@ -68,7 +80,7 @@ In the panel, under **Settings** (saved for next time):
 
 - **"No audit items found on this page"**: open the audit *edit* page (the one with the edit buttons), wait for it to load, then press **Rescan page**.
 - **A section shows a row-count mismatch**: the screenshot may be cut off or overlapped (a tooltip over the icons, for example). Take it again with all cards fully visible.
-- **"no "Active" option in the dialog (found: …)"**: add the right word from the list in *found:* to the green option names in Settings.
+- **"could not tell which option is the green one (found: …)"**: add the green option's name from the *found:* list to *Other names for the green option* in Settings.
 - **"the dialog stayed open after Submit"**: the portal rejected the form, and its message is shown. The dialog is closed and the run moves on to the next item.
 
 ## Files

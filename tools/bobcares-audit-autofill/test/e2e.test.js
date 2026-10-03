@@ -20,14 +20,19 @@ try {
 const DIR = path.join(__dirname, '..');
 const EDIT_URL = 'https://portal.bobcares.com/bob_Portal/server-audit/264/edit/12182';
 const VIEW_URL = 'https://portal.bobcares.com/bob_Portal/server/264/audits/11950';
-// Previous month (reference). The edit page starts half done: GGGGG, GGGGGGG, YYYYYYY, GGGNGGG, GYYY, YYYYYYYY
-// (see START in test/mock/edit.html), so only Server Health and five Proactive Defence items need marking.
+// Previous month (reference). The edit page starts with only Threat Protection done: GGGGG, YYYYYYY, YYYYYYY,
+// YYYNYYY, YYYY, YYYYYYYY (see START in test/mock/edit.html), and each section words its options differently.
 const REF_STATES = 'GGGGG,GGGGGGG,GGGGGGG,GGGNGGG,GRRR,GGGRGRGR';
 const EXPECTED_TICKS = [
+  'Control Panel', 'Operating System', 'PHP', 'CMS', 'Web Server', 'Database Server', 'Other Softwares',
   'Server Uptime', 'HTTP Uptime', 'CPU Usage', 'RAM Usage', 'Disc Space Usage', 'Email Queue', 'IP Reputation',
+  'Local Backup', 'Remote Backup', 'Daily Backup', 'Monthly Backup', 'Recent Last Backup', 'Size Of Last Backup',
+  'Control Panel',
   '/tmp Security', 'Reboot Procedure', 'IP RDNS', 'Rootkit Check', 'PHP Functions Security',
 ];
 const EXPECTED_END = ['GGGGG', 'GGGGGGG', 'GGGGGGG', 'GGGNGGG', 'GYYY', 'GGGYGYGY'];
+// The option picked in each section (Backup: not a known name, picked as the first of a green / red pair).
+const PICKED = ['Active', 'All updates installed', 'Good', 'Available', 'Support Period Active', 'Configured'];
 
 // browser.storage / runtime stand-in, kept in the page's localStorage so it survives reloads like the real one.
 const STUB = `
@@ -86,7 +91,7 @@ async function openEditPage(context, query, settings) {
     localStorage.clear();
     sessionStorage.clear();
     localStorage.setItem('__ext_storage', JSON.stringify({ settings: st }));
-  }, Object.assign({ keywords: 'Active, Enabled', delayMs: 200, skipDone: true, details: '' }, settings));
+  }, Object.assign({ keywords: '', delayMs: 200, skipDone: true, details: '' }, settings));
   await page.reload();
   await page.locator('#launcher').click();
   return page;
@@ -136,15 +141,15 @@ test('end to end', { skip: !chromium && 'playwright is not installed' }, async (
       const page = await openEditPage(context, '?variant=' + variant + '&mode=' + mode);
       await page.locator('#file').setInputFiles(ref);
       assert.deepEqual(await ticked(page), EXPECTED_TICKS);
-      assert.equal(await page.locator('#apply').textContent(), 'Mark 12 items Active');
+      assert.equal(await page.locator('#apply').textContent(), 'Mark 26 items Active');
 
       await page.locator('#apply').click();
-      const status = await waitForStatus(page, /^(Done|Stopped)/, 90000);
-      assert.match(status, /^Done\. 12 marked Active\.$/);
+      const status = await waitForStatus(page, /^(Done|Stopped)/, 180000);
+      assert.match(status, /^Done\. 26 marked Active\.$/);
 
       const { state, submissions } = await pageState(page);
       assert.deepEqual(state.map((s) => s.join('')), EXPECTED_END);
-      assert.equal(submissions.length, 12);
+      assert.equal(submissions.length, 26);
       for (const sub of submissions) {
         assert.equal(sub.status, '1', 'picked Active');
         assert.equal(sub.rec, '0', 'recommendation left at No');
@@ -161,29 +166,31 @@ test('end to end', { skip: !chromium && 'playwright is not installed' }, async (
     await page.locator('#file').setInputFiles(ref);
     await ticked(page);
     await page.locator('#dry').click();
-    const status = await waitForStatus(page, /^(Done|Stopped)/, 60000);
-    assert.match(status, /^Done\. 12 checked \(dry run, nothing saved\)\.$/);
+    const status = await waitForStatus(page, /^(Done|Stopped)/, 180000);
+    assert.match(status, /^Done\. 26 checked \(dry run, nothing saved\)\.$/);
+    const notes = await page.locator('#results td small').allTextContents();
+    for (const name of PICKED.slice(1)) assert.ok(notes.some((n) => n.includes('would pick "' + name + '"')), 'picked ' + name);
     const { state, submissions } = await pageState(page);
     assert.equal(state, null);
     assert.equal(submissions.length, 0);
     await context.close();
   });
 
-  await t.test('unticked items and a missing option name are left alone', async () => {
+  await t.test('unticked items, and dialogs whose green option is unclear, are left alone', async () => {
     const context = await newContext(browser);
     const ref = await referenceImage(context);
-    const page = await openEditPage(context, '?variant=a&mode=ajax', { keywords: 'Enabled', details: 'Checked, all fine.' });
+    const page = await openEditPage(context, '?variant=a&mode=ajax&names=odd', { details: 'Checked, all fine.' });
     await page.locator('#file').setInputFiles(ref);
     await ticked(page);
-    // Untick the whole Server Health card, keep Proactive Defence (5 items).
-    await page.locator('#plan .sec').nth(2).locator('button', { hasText: 'none' }).click();
-    assert.equal(await page.locator('#apply').textContent(), 'Mark 5 items Active');
+    // Untick Software Updates, Server Health and Backup; keep Software Life Time and Proactive Defence (6 items).
+    for (const n of [1, 2, 3]) await page.locator('#plan .sec').nth(n).locator('button', { hasText: 'none' }).click();
+    assert.equal(await page.locator('#apply').textContent(), 'Mark 6 items Active');
     await page.locator('#apply').click();
     const status = await waitForStatus(page, /^(Done|Stopped)/, 60000);
-    assert.match(status, /5 failed/);
+    assert.match(status, /6 failed/);
     const fails = await page.locator('#results td.r.failed').count();
-    assert.equal(fails, 5);
-    assert.match(await page.locator('#results').textContent(), /no "Enabled" option in the dialog \(found: Active, Inactive\)/);
+    assert.equal(fails, 6);
+    assert.match(await page.locator('#results').textContent(), /could not tell which option is the green one \(found: Option 1, Option 2\)/);
     const { state, submissions } = await pageState(page);
     assert.equal(state, null);
     assert.equal(submissions.length, 0);
@@ -204,8 +211,8 @@ test('end to end', { skip: !chromium && 'playwright is not installed' }, async (
     await other.waitForTimeout(1500);
     assert.equal(other.url(), VIEW_URL);
     assert.equal(await other.locator('.panel:not(.hidden)').count(), 0);
-    await waitForStatus(page, /^(Done|Stopped)/, 90000);
-    assert.equal((await pageState(page)).submissions.length, 12);
+    await waitForStatus(page, /^(Done|Stopped)/, 180000);
+    assert.equal((await pageState(page)).submissions.length, 26);
     await context.close();
   });
 

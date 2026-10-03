@@ -9,6 +9,9 @@
         variant=a  row grid, ul/li rows, one shared Bootstrap-style modal, status from classes (default)
         variant=b  column grid, div rows, one modal per item, dot colour from inline style only
         mode=reload  Submit "posts" and reloads the page (default)   mode=ajax  Submit updates the page in place
+        names=odd  every dialog offers "Option 1 / Option 2", so the green option can't be told
+      Each section words its options like the portal does (OPTIONS); Backup uses a pair the extension
+      doesn't know by name, to exercise its "first option" fallback.
       State lives in localStorage.mockAudit; every submit is logged in localStorage.mockSubmissions.
       The "Edit server details" button is a stray edit button outside the audit cards that must be ignored.
     -->
@@ -61,10 +64,22 @@
         ['Software Life Time', ['Control Panel', 'Operating System', 'CMS', 'Software Stack']],
         ['Proactive Defence', ['/tmp Security', 'Reboot Procedure', 'IP RDNS', 'Malware Scan', 'Rootkit Check', 'SSH Root Access Security', 'PHP Functions Security', 'Root password health']],
       ];
-      // Current month, half done (like the screenshot of the edit page): G green, Y not done, N NA, R inactive.
-      const START = ['GGGGG', 'GGGGGGG', 'YYYYYYY', 'GGGNGGG', 'GYYY', 'YYYYYYYY'];
+      // Current month, Threat Protection done: G green, Y not done, N NA, R red.
+      const START = ['GGGGG', 'YYYYYYY', 'YYYYYYY', 'YYYNYYY', 'YYYY', 'YYYYYYYY'];
+      // Status options per section, green / red / NA (values 1 / 0 / 2).
+      const OPTIONS = [
+        ['Active', 'Inactive'],
+        ['All updates installed', 'Updates pending to install', 'NA'],
+        ['Good', 'Not Good', 'NA'],
+        ['Available', 'Not Available', 'NA'],
+        ['Support Period Active', 'End Of Life Period', 'NA'],
+        ['Configured', 'Not Configured', 'NA'],
+      ];
+      const VALUES = ['1', '0', '2'];
+      const STATE_OF = { 1: 'G', 0: 'R', 2: 'N' };
 
       const q = new URLSearchParams(location.search);
+      const options = (s) => (q.get('names') === 'odd' ? ['Option 1', 'Option 2'] : OPTIONS[s]);
       const variant = q.get('variant') || 'a';
       const mode = q.get('mode') || 'reload';
       const state = JSON.parse(localStorage.getItem('mockAudit') || 'null') || START.map((s) => s.split(''));
@@ -106,7 +121,7 @@
         }
         const rec = form.querySelector('input[name^="rec"]:checked');
         logSubmit({ s, i, status: status.value, rec: rec ? rec.value : null, details: form.querySelector('textarea').value });
-        state[s][i] = status.value === '1' ? 'G' : 'R';
+        state[s][i] = STATE_OF[status.value];
         save();
         if (mode === 'reload') {
           sessionStorage.setItem('flash', '1');
@@ -145,10 +160,7 @@
             <form id="auditForm">
               <div class="modal-header"><h5 class="modal-title" id="mTitle"></h5><button type="button" class="close" data-dismiss="modal">×</button></div>
               <div class="modal-body">
-                <div class="form-group">
-                  <span class="custom-control custom-radio"><input type="radio" id="stA" name="status" value="1"><label for="stA">Active</label></span>
-                  <span class="custom-control custom-radio"><input type="radio" id="stI" name="status" value="0"><label for="stI">Inactive</label></span>
-                </div>
+                <div class="form-group" id="statusGroup"></div>
                 <div class="form-group"><label>Additional details</label><textarea name="details"></textarea></div>
                 <div class="form-group">Any recommendations?
                   <input type="radio" name="recommendation" value="0" id="rn"><label for="rn">No</label>
@@ -170,8 +182,12 @@
             form.reset();
             const err = form.querySelector('.err');
             if (err) err.remove();
-            document.getElementById('stA').checked = st === 'G';
-            document.getElementById('stI').checked = st === 'R';
+            document.getElementById('statusGroup').innerHTML = options(cur[0])
+              .map(
+                (text, k) => `<span class="custom-control custom-radio"><input type="radio" id="st${k}" name="status" value="${VALUES[k]}"
+                  ${STATE_OF[VALUES[k]] === st ? 'checked' : ''}><label for="st${k}">${esc(text)}</label></span>`
+              )
+              .join('');
             document.getElementById('rn').checked = true;
             showModal(modal);
           }
@@ -209,8 +225,12 @@
             (label, i) => `<div class="modal fade" id="m_${s}_${i}" role="dialog"><div class="modal-content"><form>
               <div class="modal-header"><h5 class="modal-title">${esc(label)}</h5><a href="#" class="close" data-dismiss="modal">×</a></div>
               <div class="modal-body">
-                <label><input type="radio" name="st_${s}_${i}" value="1" ${state[s][i] === 'G' ? 'checked' : ''}> Active</label>
-                <label><input type="radio" name="st_${s}_${i}" value="0" ${state[s][i] === 'R' ? 'checked' : ''}> Inactive</label>
+                ${options(s)
+                  .map(
+                    (text, k) =>
+                      `<label><input type="radio" name="st_${s}_${i}" value="${VALUES[k]}" ${STATE_OF[VALUES[k]] === state[s][i] ? 'checked' : ''}> ${esc(text)}</label>`
+                  )
+                  .join('')}
                 <p>Additional details</p><textarea></textarea>
                 <div>Any recommendations? <label><input type="radio" name="rec_${s}_${i}" value="0" checked> No</label>
                   <label><input type="radio" name="rec_${s}_${i}" value="1"> Yes</label></div>
